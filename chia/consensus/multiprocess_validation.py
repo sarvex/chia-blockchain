@@ -59,9 +59,10 @@ def batch_pre_validate_blocks(
     expected_sub_slot_iters: List[uint64],
     validate_signatures: bool,
 ) -> List[bytes]:
-    blocks: Dict[bytes32, BlockRecord] = {}
-    for k, v in blocks_pickled.items():
-        blocks[bytes32(k)] = BlockRecord.from_bytes(v)
+    blocks: Dict[bytes32, BlockRecord] = {
+        bytes32(k): BlockRecord.from_bytes(v)
+        for k, v in blocks_pickled.items()
+    }
     results: List[PreValidationResult] = []
     if full_blocks_pickled is not None and header_blocks_pickled is not None:
         assert ValueError("Only one should be passed here")
@@ -115,23 +116,22 @@ def batch_pre_validate_blocks(
 
                 successfully_validated_signatures = False
                 # If we failed CLVM, no need to validate signature, the block is already invalid
-                if error_int is None:
-
-                    # If this is False, it means either we don't have a signature (not a tx block) or we have an invalid
-                    # signature (which also puts in an error) or we didn't validate the signature because we want to
-                    # validate it later. receive_block will attempt to validate the signature later.
-                    if validate_signatures:
-                        if npc_result is not None and block.transactions_info is not None:
-                            assert npc_result.conds
-                            pairs_pks, pairs_msgs = pkm_pairs(npc_result.conds, constants.AGG_SIG_ME_ADDITIONAL_DATA)
-                            # Using AugSchemeMPL.aggregate_verify, so it's safe to use from_bytes_unchecked
-                            pks_objects: List[G1Element] = [G1Element.from_bytes_unchecked(pk) for pk in pairs_pks]
-                            if not AugSchemeMPL.aggregate_verify(
-                                pks_objects, pairs_msgs, block.transactions_info.aggregated_signature
-                            ):
-                                error_int = uint16(Err.BAD_AGGREGATE_SIGNATURE.value)
-                            else:
-                                successfully_validated_signatures = True
+                if (
+                    error_int is None
+                    and validate_signatures
+                    and npc_result is not None
+                    and block.transactions_info is not None
+                ):
+                    assert npc_result.conds
+                    pairs_pks, pairs_msgs = pkm_pairs(npc_result.conds, constants.AGG_SIG_ME_ADDITIONAL_DATA)
+                    # Using AugSchemeMPL.aggregate_verify, so it's safe to use from_bytes_unchecked
+                    pks_objects: List[G1Element] = [G1Element.from_bytes_unchecked(pk) for pk in pairs_pks]
+                    if not AugSchemeMPL.aggregate_verify(
+                        pks_objects, pairs_msgs, block.transactions_info.aggregated_signature
+                    ):
+                        error_int = uint16(Err.BAD_AGGREGATE_SIGNATURE.value)
+                    else:
+                        successfully_validated_signatures = True
 
                 results.append(
                     PreValidationResult(error_int, required_iters, npc_result, successfully_validated_signatures)
@@ -140,7 +140,6 @@ def batch_pre_validate_blocks(
                 error_stack = traceback.format_exc()
                 log.error(f"Exception: {error_stack}")
                 results.append(PreValidationResult(uint16(Err.UNKNOWN.value), None, None, False))
-    # In this case, we are validating header blocks
     elif header_blocks_pickled is not None:
         for i in range(len(header_blocks_pickled)):
             try:
@@ -196,13 +195,13 @@ async def pre_validate_blocks_multiprocessing(
     # Collects all the recent blocks (up to the previous sub-epoch)
     recent_blocks: Dict[bytes32, BlockRecord] = {}
     recent_blocks_compressed: Dict[bytes32, BlockRecord] = {}
-    num_sub_slots_found = 0
-    num_blocks_seen = 0
     if blocks[0].height > 0:
         if not block_records.contains_block(blocks[0].prev_header_hash):
             return [PreValidationResult(uint16(Err.INVALID_PREV_BLOCK_HASH.value), None, None, False)]
         curr = block_records.block_record(blocks[0].prev_header_hash)
         num_sub_slots_to_look_for = 3 if curr.overflow else 2
+        num_sub_slots_found = 0
+        num_blocks_seen = 0
         while (
             curr.sub_epoch_summary_included is None
             or num_blocks_seen < constants.NUMBER_OF_TIMESTAMPS
@@ -220,10 +219,9 @@ async def pre_validate_blocks_multiprocessing(
             curr = block_records.block_record(curr.prev_hash)
         recent_blocks[curr.header_hash] = curr
         recent_blocks_compressed[curr.header_hash] = curr
-    block_record_was_present = []
-    for block in blocks:
-        block_record_was_present.append(block_records.contains_block(block.header_hash))
-
+    block_record_was_present = [
+        block_records.contains_block(block.header_hash) for block in blocks
+    ]
     diff_ssis: List[Tuple[uint64, uint64]] = []
     for block in blocks:
         if block.height != 0:
@@ -272,7 +270,10 @@ async def pre_validate_blocks_multiprocessing(
         if block_rec.sub_epoch_summary_included is not None and wp_summaries is not None:
             idx = int(block.height / constants.SUB_EPOCH_BLOCKS) - 1
             next_ses = wp_summaries[idx]
-            if not block_rec.sub_epoch_summary_included.get_hash() == next_ses.get_hash():
+            if (
+                block_rec.sub_epoch_summary_included.get_hash()
+                != next_ses.get_hash()
+            ):
                 log.error("sub_epoch_summary does not match wp sub_epoch_summary list")
                 return [PreValidationResult(uint16(Err.INVALID_SUB_EPOCH_SUMMARY.value), None, None, False)]
         # Makes sure to not override the valid blocks already in block_records
@@ -293,15 +294,15 @@ async def pre_validate_blocks_multiprocessing(
             block_records.remove_block_record(block.header_hash)
 
     recent_sb_compressed_pickled = {bytes(k): bytes(v) for k, v in recent_blocks_compressed.items()}
-    npc_results_pickled = {}
-    for k, v in npc_results.items():
-        npc_results_pickled[k] = bytes(v)
+    npc_results_pickled = {k: bytes(v) for k, v in npc_results.items()}
     futures = []
     # Pool of workers to validate blocks concurrently
     for i in range(0, len(blocks), batch_size):
         end_i = min(i + batch_size, len(blocks))
         blocks_to_validate = blocks[i:end_i]
-        if any([len(block.finished_sub_slots) > 0 for block in blocks_to_validate]):
+        if any(
+            len(block.finished_sub_slots) > 0 for block in blocks_to_validate
+        ):
             final_pickled = {bytes(k): bytes(v) for k, v in recent_blocks.items()}
         else:
             final_pickled = recent_sb_compressed_pickled

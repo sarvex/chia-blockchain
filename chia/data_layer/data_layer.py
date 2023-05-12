@@ -165,20 +165,16 @@ class DataLayer:
 
             # check before any DL changes that this singleton is currently owned by this wallet
             singleton_records: List[SingletonRecord] = await self.get_owned_stores()
-            if not any(tree_id == singleton.launcher_id for singleton in singleton_records):
+            if all(
+                tree_id != singleton.launcher_id for singleton in singleton_records
+            ):
                 raise ValueError(f"Singleton with launcher ID {tree_id} is not owned by DL Wallet")
 
             t1 = time.monotonic()
             batch_hash = await self.data_store.insert_batch(tree_id, changelist)
             t2 = time.monotonic()
             self.log.info(f"Data store batch update process time: {t2 - t1}.")
-            # todo return empty node hash from get_tree_root
-            if batch_hash is not None:
-                node_hash = batch_hash
-            else:
-                node_hash = self.none_bytes  # todo change
-
-            return node_hash
+            return batch_hash if batch_hash is not None else self.none_bytes
 
     async def publish_update(
         self,
@@ -194,12 +190,11 @@ class DataLayer:
 
         root_hash = self.none_bytes if pending_root.node_hash is None else pending_root.node_hash
 
-        transaction_record = await self.wallet_rpc.dl_update_root(
+        return await self.wallet_rpc.dl_update_root(
             launcher_id=tree_id,
             new_root=root_hash,
             fee=fee,
         )
-        return transaction_record
 
     async def get_key_value_hash(
         self,
@@ -234,8 +229,7 @@ class DataLayer:
     async def get_keys(self, store_id: bytes32, root_hash: Optional[bytes32]) -> List[bytes]:
         async with self.lock:
             await self._update_confirmation_status(tree_id=store_id)
-        res = await self.data_store.get_keys(store_id, root_hash)
-        return res
+        return await self.data_store.get_keys(store_id, root_hash)
 
     async def get_ancestors(self, node_hash: bytes32, store_id: bytes32) -> List[InternalNode]:
         async with self.lock:
@@ -313,7 +307,7 @@ class DataLayer:
             new_hashes = [record.root for record in reversed(wallet_history)]
             root_hash = self.none_bytes if root.node_hash is None else root.node_hash
             generation_shift = 0
-            while len(new_hashes) > 0 and new_hashes[0] == root_hash:
+            while new_hashes and new_hashes[0] == root_hash:
                 generation_shift += 1
                 new_hashes.pop(0)
             if generation_shift > 0:
@@ -521,7 +515,9 @@ class DataLayer:
 
             # Subscribe to all local tree_ids that we can find on chain.
             local_tree_ids = await self.data_store.get_tree_ids()
-            subscription_tree_ids = set(subscription.tree_id for subscription in subscriptions)
+            subscription_tree_ids = {
+                subscription.tree_id for subscription in subscriptions
+            }
             for local_id in local_tree_ids:
                 if local_id not in subscription_tree_ids:
                     try:
@@ -732,20 +728,25 @@ class DataLayer:
                         (
                             root.hex(),
                             str(sibling_sides_integer),
-                            ["0x" + sibling_hash.hex() for sibling_hash in proof_of_inclusion.sibling_hashes()],
+                            [
+                                f"0x{sibling_hash.hex()}"
+                                for sibling_hash in proof_of_inclusion.sibling_hashes()
+                            ],
                         )
                     )
 
             solver: Dict[str, Any] = {
                 "proofs_of_inclusion": proofs_of_inclusion,
                 **{
-                    "0x"
-                    + our_offer_store.store_id.hex(): {
-                        "new_root": "0x" + root.hex(),
+                    f"0x{our_offer_store.store_id.hex()}": {
+                        "new_root": f"0x{root.hex()}",
                         "dependencies": [
                             {
-                                "launcher_id": "0x" + their_offer_store.store_id.hex(),
-                                "values_to_prove": ["0x" + entry.node_hash.hex() for entry in their_offer_store.proofs],
+                                "launcher_id": f"0x{their_offer_store.store_id.hex()}",
+                                "values_to_prove": [
+                                    f"0x{entry.node_hash.hex()}"
+                                    for entry in their_offer_store.proofs
+                                ],
                             }
                             for their_offer_store in maker
                         ],
@@ -754,17 +755,11 @@ class DataLayer:
                 },
             }
 
-        # Excluding wallet from transaction since failures in the wallet may occur
-        # after the transaction is submitted to the chain.  If we roll back data we
-        # may lose published data.
-
-        trade_record = await self.wallet_rpc.take_offer(
+        return await self.wallet_rpc.take_offer(
             offer=offer,
             solver=solver,
             fee=fee,
         )
-
-        return trade_record
 
     async def cancel_offer(self, trade_id: bytes32, secure: bool, fee: uint64) -> None:
         store_ids: List[bytes32] = []

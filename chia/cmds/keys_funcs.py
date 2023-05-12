@@ -93,7 +93,7 @@ def show_all_key_labels() -> None:
     def print_line(fingerprint: str, label: str) -> None:
         fingerprint_text = ("{0:<" + str(fingerprint_width) + "}").format(fingerprint)
         label_text = ("{0:<" + str(MAX_LABEL_LENGTH) + "}").format(label)
-        print("| " + fingerprint_text + " | " + label_text + " |")
+        print(f"| {fingerprint_text} | {label_text} |")
 
     keys = Keychain().get_keys()
 
@@ -221,7 +221,7 @@ def derive_sk_from_hd_path(master_sk: PrivateKey, hd_path_root: str) -> Tuple[Pr
         OBSERVER = 1
 
     path: List[str] = hd_path_root.split("/")
-    if len(path) == 0 or path[0] != "m":
+    if not path or path[0] != "m":
         raise ValueError("Invalid HD path. Must start with 'm'")
 
     path = path[1:]  # Skip "m"
@@ -291,10 +291,7 @@ def verify(message: str, public_key: str, signature: str, as_bytes: bool):
 
 
 def as_bytes_from_signing_mode(signing_mode_str: str) -> bool:
-    if signing_mode_str == SigningMode.BLS_MESSAGE_AUGMENTATION_HEX_INPUT.value:
-        return True
-    else:
-        return False
+    return signing_mode_str == SigningMode.BLS_MESSAGE_AUGMENTATION_HEX_INPUT.value
 
 
 def _clear_line_part(n: int):
@@ -316,7 +313,7 @@ def _search_derived(
     search_private_key: bool,
     search_address: bool,
     prefix: str,
-) -> List[str]:  # Return a subset of search_terms that were found
+) -> List[str]:    # Return a subset of search_terms that were found
     """
     Performs a shallow search of keys derived from the current sk for items matching
     the provided search terms.
@@ -381,7 +378,7 @@ def _search_derived(
             if found_item is not None and found_item_type is not None:
                 found_items.append((term, found_item, found_item_type))
 
-        if len(found_items) > 0 and show_progress:
+        if found_items and show_progress:
             print()
 
         for (term, found_item, found_item_type) in found_items:
@@ -395,7 +392,7 @@ def _search_derived(
 
             printed_match = True
 
-        if len(remaining_search_terms) == 0:
+        if not remaining_search_terms:
             break
 
         # Remove the last index from the path
@@ -407,7 +404,6 @@ def _search_derived(
                 # Write the path (without current_index_str) since we printed out a match
                 # e.g. m/12381/8444/2/
                 sys.stdout.write(f"{current_path}")  # lgtm [py/clear-text-logging-sensitive-data]
-            # Remove the last index from the output
             else:
                 _clear_line_part(len(current_index_str))
 
@@ -487,12 +483,11 @@ def search_derive(
             for term in found_terms:
                 del remaining_search_terms[term]
 
-            if len(remaining_search_terms) == 0:
+            if not remaining_search_terms:
                 # Found everything we were looking for
                 break
 
             current_path = hd_path_root
-        # Otherwise derive from well-known derivation paths
         else:
             current_path_indices: List[int] = [12381, 8444]
             path_root: str = "m/"
@@ -508,7 +503,7 @@ def search_derive(
             # 0 = farmer, 1 = pool, 2 = wallet, 3 = local, 4 = backup key, 5 = singleton, 6 = pooling authentication
             for account in range(7):
                 account_str = str(account) + ("n" if non_observer_derivation else "")
-                current_path = path_root + f"{account_str}/"
+                current_path = f"{path_root}{account_str}/"
                 current_path_indices.append(account)
                 if show_progress:
                     # Print the current path index
@@ -533,7 +528,7 @@ def search_derive(
                 for found_term in found_terms:
                     del remaining_search_terms[found_term]
 
-                if len(remaining_search_terms) == 0:
+                if not remaining_search_terms:
                     # Found everything we were looking for
                     break
 
@@ -543,7 +538,7 @@ def search_derive(
 
                 current_path_indices = current_path_indices[:-1]
 
-        if len(remaining_search_terms) == 0:
+        if not remaining_search_terms:
             # Found everything we were looking for
             break
 
@@ -553,7 +548,7 @@ def search_derive(
             sys.stdout.flush()
 
     end_time = perf_counter()
-    if len(remaining_search_terms) > 0:
+    if remaining_search_terms:
         for term in remaining_search_terms:
             print(f"Could not find '{term}'")
 
@@ -561,7 +556,7 @@ def search_derive(
         print()
         print(f"Search completed in {end_time - start_time} seconds")
 
-    return len(remaining_search_terms) == 0
+    return not remaining_search_terms
 
 
 def derive_wallet_address(
@@ -631,8 +626,9 @@ def derive_child_key(
 
     # Key type was specified
     if key_type is not None:
-        path_indices: List[int] = [12381, 8444]
-        path_indices.append(
+        path_indices: List[int] = [
+            12381,
+            8444,
             {
                 "farmer": 0,
                 "pool": 1,
@@ -641,9 +637,8 @@ def derive_child_key(
                 "backup": 4,
                 "singleton": 5,
                 "pool_auth": 6,
-            }[key_type]
-        )
-
+            }[key_type],
+        ]
         if non_observer_derivation:
             current_sk = _derive_path(master_sk, path_indices)
         else:
@@ -653,7 +648,6 @@ def derive_child_key(
         hd_path_root = "m/"
         for i in path_indices:
             hd_path_root += f"{i}{'n' if non_observer_derivation else ''}/"
-    # Arbitrary HD path was specified
     elif derive_from_hd_path is not None:
         derivation_root_sk, hd_path_root = derive_sk_from_hd_path(master_sk, derive_from_hd_path)
 
@@ -665,7 +659,11 @@ def derive_child_key(
             else:
                 sk = _derive_path_unhardened(derivation_root_sk, [i])
             hd_path: str = (
-                " (" + hd_path_root + str(i) + ("n" if non_observer_derivation else "") + ")" if show_hd_path else ""
+                f" ({hd_path_root}{str(i)}"
+                + ("n" if non_observer_derivation else "")
+                + ")"
+                if show_hd_path
+                else ""
             )
             key_type_str: Optional[str]
 
@@ -683,10 +681,14 @@ def private_key_for_fingerprint(fingerprint: int) -> Optional[PrivateKey]:
     unlock_keyring()
     private_keys = Keychain().get_all_private_keys()
 
-    for sk, _ in private_keys:
-        if sk.get_g1().get_fingerprint() == fingerprint:
-            return sk
-    return None
+    return next(
+        (
+            sk
+            for sk, _ in private_keys
+            if sk.get_g1().get_fingerprint() == fingerprint
+        ),
+        None,
+    )
 
 
 def get_private_key_with_fingerprint_or_prompt(fingerprint: Optional[int]):
@@ -709,16 +711,12 @@ def get_private_key_with_fingerprint_or_prompt(fingerprint: Optional[int]):
             val = input("Enter a number to pick or q to quit: ")
             if val == "q":
                 return None
-            if not val.isdigit():
-                val = None
-            else:
+            if val.isdigit():
                 index = int(val) - 1
-                if index >= len(fingerprints):
-                    print("Invalid value")
-                    val = None
-                    continue
-                else:
+                if index < len(fingerprints):
                     return private_key_for_fingerprint(fingerprints[index])
+                print("Invalid value")
+            val = None
 
 
 def private_key_from_mnemonic_seed_file(filename: Path) -> PrivateKey:
@@ -737,7 +735,7 @@ def resolve_derivation_master_key(fingerprint_or_filename: Optional[Union[int, s
     """
 
     if fingerprint_or_filename is not None and (
-        isinstance(fingerprint_or_filename, str) or isinstance(fingerprint_or_filename, Path)
+        isinstance(fingerprint_or_filename, (str, Path))
     ):
         return private_key_from_mnemonic_seed_file(Path(os.fspath(fingerprint_or_filename)))
     else:

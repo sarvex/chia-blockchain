@@ -128,28 +128,24 @@ class BlockStore:
             return bytes32.fromhex(field)
 
     def maybe_to_hex(self, field: bytes) -> Any:
-        if self.db_wrapper.db_version == 2:
-            return field
-        else:
-            return field.hex()
+        return field if self.db_wrapper.db_version == 2 else field.hex()
 
     def compress(self, block: FullBlock) -> bytes:
         ret: bytes = zstd.compress(bytes(block))
         return ret
 
     def maybe_decompress(self, block_bytes: bytes) -> FullBlock:
-        if self.db_wrapper.db_version == 2:
-            ret: FullBlock = FullBlock.from_bytes(zstd.decompress(block_bytes))
-        else:
-            ret = FullBlock.from_bytes(block_bytes)
-        return ret
+        return (
+            FullBlock.from_bytes(zstd.decompress(block_bytes))
+            if self.db_wrapper.db_version == 2
+            else FullBlock.from_bytes(block_bytes)
+        )
 
     def maybe_decompress_blob(self, block_bytes: bytes) -> bytes:
-        if self.db_wrapper.db_version == 2:
-            ret: bytes = zstd.decompress(block_bytes)
-            return ret
-        else:
+        if self.db_wrapper.db_version != 2:
             return block_bytes
+        ret: bytes = zstd.decompress(block_bytes)
+        return ret
 
     async def rollback(self, height: int) -> None:
         if self.db_wrapper.db_version == 2:
@@ -310,24 +306,20 @@ class BlockStore:
             ) as cursor:
                 row = await cursor.fetchone()
         if row is not None:
-            if self.db_wrapper.db_version == 2:
-                ret: bytes = zstd.decompress(row[0])
-            else:
-                ret = row[0]
-            return ret
-
+            return zstd.decompress(row[0]) if self.db_wrapper.db_version == 2 else row[0]
         return None
 
     async def get_full_blocks_at(self, heights: List[uint32]) -> List[FullBlock]:
-        if len(heights) == 0:
+        if not heights:
             return []
 
         formatted_str = f'SELECT block from full_blocks WHERE height in ({"?," * (len(heights) - 1)}?)'
         async with self.db_wrapper.reader_no_transaction() as conn:
             async with conn.execute(formatted_str, heights) as cursor:
-                ret: List[FullBlock] = []
-                for row in await cursor.fetchall():
-                    ret.append(self.maybe_decompress(row[0]))
+                ret: List[FullBlock] = [
+                    self.maybe_decompress(row[0])
+                    for row in await cursor.fetchall()
+                ]
                 return ret
 
     async def get_block_info(self, header_hash: bytes32) -> Optional[GeneratorBlockInfo]:
@@ -391,7 +383,7 @@ class BlockStore:
     async def get_generators_at(self, heights: List[uint32]) -> List[SerializedProgram]:
         assert self.db_wrapper.db_version == 2
 
-        if len(heights) == 0:
+        if not heights:
             return []
 
         generators: Dict[uint32, SerializedProgram] = {}
@@ -424,7 +416,7 @@ class BlockStore:
         Returns a list of Block Records, ordered by the same order in which header_hashes are passed in.
         Throws an exception if the blocks are not present
         """
-        if len(header_hashes) == 0:
+        if not header_hashes:
             return []
 
         all_blocks: Dict[bytes32, BlockRecord] = {}
@@ -459,7 +451,7 @@ class BlockStore:
         Throws an exception if the blocks are not present
         """
 
-        if len(header_hashes) == 0:
+        if not header_hashes:
             return []
 
         # sqlite on python3.7 on windows has issues with large variable substitutions
@@ -494,7 +486,7 @@ class BlockStore:
         Throws an exception if the blocks are not present
         """
 
-        if len(header_hashes) == 0:
+        if not header_hashes:
             return []
 
         header_hashes_db: Sequence[Union[bytes32, str]]
@@ -530,9 +522,6 @@ class BlockStore:
                     (header_hash,),
                 ) as cursor:
                     row = await cursor.fetchone()
-            if row is not None:
-                return BlockRecord.from_bytes(row[0])
-
         else:
             async with self.db_wrapper.reader_no_transaction() as conn:
                 async with conn.execute(
@@ -540,9 +529,7 @@ class BlockStore:
                     (header_hash.hex(),),
                 ) as cursor:
                     row = await cursor.fetchone()
-            if row is not None:
-                return BlockRecord.from_bytes(row[0])
-        return None
+        return BlockRecord.from_bytes(row[0]) if row is not None else None
 
     async def get_block_records_in_range(
         self,
@@ -678,9 +665,7 @@ class BlockStore:
                 "SELECT is_fully_compactified from full_blocks WHERE header_hash=?", (self.maybe_to_hex(header_hash),)
             ) as cursor:
                 row = await cursor.fetchone()
-        if row is None:
-            return None
-        return bool(row[0])
+        return None if row is None else bool(row[0])
 
     async def get_random_not_compactified(self, number: int) -> List[int]:
 
@@ -702,9 +687,7 @@ class BlockStore:
                 ) as cursor:
                     rows = await cursor.fetchall()
 
-        heights = [int(row[0]) for row in rows]
-
-        return heights
+        return [int(row[0]) for row in rows]
 
     async def count_compactified_blocks(self) -> int:
         if self.db_wrapper.db_version == 2:

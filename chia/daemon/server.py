@@ -100,13 +100,13 @@ if getattr(sys, "frozen", False):
 
     def executable_for_service(service_name: str) -> str:
         application_path = os.path.dirname(sys.executable)
-        if sys.platform == "win32" or sys.platform == "cygwin":
+        if sys.platform in ["win32", "cygwin"]:
             executable = name_map[service_name]
             path = f"{application_path}/{executable}.exe"
-            return path
         else:
             path = f"{application_path}/{name_map[service_name]}"
-            return path
+
+        return path
 
 else:
     application_path = os.path.dirname(__file__)
@@ -116,8 +116,7 @@ else:
 
 
 async def ping() -> Dict[str, Any]:
-    response = {"success": True, "value": "pong"}
-    return response
+    return {"success": True, "value": "pong"}
 
 
 class WebSocketServer:
@@ -133,10 +132,10 @@ class WebSocketServer:
     ):
         self.root_path = root_path
         self.log = log
-        self.services: Dict = dict()
+        self.services: Dict = {}
         self.plots_queue: List[Dict] = []
-        self.connections: Dict[str, List[WebSocketResponse]] = dict()  # service_name : [WebSocket]
-        self.remote_address_map: Dict[WebSocketResponse, str] = dict()  # socket: service_name
+        self.connections: Dict[str, List[WebSocketResponse]] = {}
+        self.remote_address_map: Dict[WebSocketResponse, str] = {}
         self.ping_job: Optional[asyncio.Task] = None
         self.net_config = load_config(root_path, "config.yaml")
         self.self_hostname = self.net_config["self_hostname"]
@@ -207,10 +206,10 @@ class WebSocketServer:
     async def stop(self) -> Dict[str, Any]:
         self.cancel_task_safe(self.ping_job)
         service_names = list(self.services.keys())
-        stop_service_jobs = [
-            asyncio.create_task(kill_service(self.root_path, self.services, s_n)) for s_n in service_names
-        ]
-        if stop_service_jobs:
+        if stop_service_jobs := [
+            asyncio.create_task(kill_service(self.root_path, self.services, s_n))
+            for s_n in service_names
+        ]:
             await asyncio.wait(stop_service_jobs)
         self.services.clear()
         asyncio.create_task(self.exit())
@@ -238,7 +237,7 @@ class WebSocketServer:
                     error = {"success": False, "error": f"{e}"}
                     response = format_response(decoded, error)
                     sockets_to_use = []
-                if len(sockets_to_use) > 0:
+                if sockets_to_use:
                     for socket in sockets_to_use:
                         try:
                             await socket.send_str(response)
@@ -266,12 +265,11 @@ class WebSocketServer:
             service_name = self.remote_address_map[websocket]
             self.remote_address_map.pop(websocket)
         if service_name in self.connections:
-            after_removal = []
-            for connection in self.connections[service_name]:
-                if connection == websocket:
-                    continue
-                else:
-                    after_removal.append(connection)
+            after_removal = [
+                connection
+                for connection in self.connections[service_name]
+                if connection != websocket
+            ]
             self.connections[service_name] = after_removal
 
     async def ping_task(self) -> None:
@@ -515,12 +513,10 @@ class WebSocketServer:
         return response
 
     def get_status(self) -> Dict[str, Any]:
-        response = {"success": True, "genesis_initialized": True}
-        return response
+        return {"success": True, "genesis_initialized": True}
 
     def get_version(self) -> Dict[str, Any]:
-        response = {"success": True, "version": __version__}
-        return response
+        return {"success": True, "version": __version__}
 
     async def get_plotters(self) -> Dict[str, Any]:
         plotters: Dict[str, Any] = get_available_plotters(self.root_path)
@@ -575,19 +571,18 @@ class WebSocketServer:
         return item
 
     def prepare_plot_state_message(self, state: PlotEvent, id):
-        message = {
+        return {
             "state": state,
             "queue": self.extract_plot_queue(id),
         }
-        return message
 
     def extract_plot_queue(self, id=None) -> List[Dict]:
         send_full_log = id is None
-        data = []
-        for item in self.plots_queue:
-            if id is None or item["id"] == id:
-                data.append(self.plot_queue_to_payload(item, send_full_log))
-        return data
+        return [
+            self.plot_queue_to_payload(item, send_full_log)
+            for item in self.plots_queue
+            if id is None or item["id"] == id
+        ]
 
     async def _state_changed(self, service: str, message: Dict[str, Any]):
         """If id is None, send the whole state queue"""
@@ -618,20 +613,18 @@ class WebSocketServer:
         plotter: str = config["plotter"]
         final_words: List[str] = []
 
-        if plotter == "chiapos":
-            final_words = ["Renamed final file"]
-        elif plotter == "bladebit":
+        if plotter == "bladebit":
             final_words = ["Finished plotting in"]
+        elif plotter == "chiapos":
+            final_words = ["Renamed final file"]
         elif plotter == "madmax":
             temp_dir = config["temp_dir"]
             final_dir = config["final_dir"]
-            if temp_dir == final_dir:
-                final_words = ["Total plot creation time was"]
-            else:
-                # "Renamed final plot" if moving to a final dir on the same volume
-                # "Copy to <path> finished, took..." if copying to another volume
-                final_words = ["Renamed final plot", "finished, took"]
-
+            final_words = (
+                ["Total plot creation time was"]
+                if temp_dir == final_dir
+                else ["Renamed final plot", "finished, took"]
+            )
         while True:
             new_data = await loop.run_in_executor(io_pool_exc, fp.readline)
 
@@ -666,15 +659,11 @@ class WebSocketServer:
         command_args: List[str] = ["-n", str(n), "-d", d, "-r", str(r)]
 
         if f is not None:
-            command_args.append("-f")
-            command_args.append(str(f))
+            command_args.extend(("-f", str(f)))
         if p is not None:
-            command_args.append("-p")
-            command_args.append(str(p))
+            command_args.extend(("-p", str(p)))
         if c is not None:
-            command_args.append("-c")
-            command_args.append(str(c))
-
+            command_args.extend(("-c", str(c)))
         return command_args
 
     def _chiapos_plotting_command_args(self, request: Any, ignoreCount: bool) -> List[str]:
@@ -691,8 +680,7 @@ class WebSocketServer:
         command_args: List[str] = ["-k", str(k), "-t", t, "-2", t2, "-b", str(b), "-u", str(u)]
 
         if a is not None:
-            command_args.append("-a")
-            command_args.append(str(a))
+            command_args.extend(("-a", str(a)))
         if e is True:
             command_args.append("-e")
         if x is True:
@@ -704,7 +692,7 @@ class WebSocketServer:
 
     def _bladebit_plotting_command_args(self, request: Any, ignoreCount: bool) -> List[str]:
         plot_type = request["plot_type"]
-        assert plot_type == "ramplot" or plot_type == "diskplot"
+        assert plot_type in ["ramplot", "diskplot"]
 
         command_args: List[str] = []
 
@@ -747,32 +735,23 @@ class WebSocketServer:
         if no_cpu_affinity is True:
             command_args.append("--no-cpu-affinity")
 
-        command_args.append("-t")
-        command_args.append(t1)
+        command_args.extend(("-t", t1))
         if t2:
-            command_args.append("-2")
-            command_args.append(t2)
+            command_args.extend(("-2", t2))
         if u:
-            command_args.append("-u")
-            command_args.append(str(u))
+            command_args.extend(("-u", str(u)))
         if cache:
-            command_args.append("--cache")
-            command_args.append(str(cache))
+            command_args.extend(("--cache", str(cache)))
         if f1_threads:
-            command_args.append("--f1-threads")
-            command_args.append(str(f1_threads))
+            command_args.extend(("--f1-threads", str(f1_threads)))
         if fp_threads:
-            command_args.append("--fp-threads")
-            command_args.append(str(fp_threads))
+            command_args.extend(("--fp-threads", str(fp_threads)))
         if c_threads:
-            command_args.append("--c-threads")
-            command_args.append(str(c_threads))
+            command_args.extend(("--c-threads", str(c_threads)))
         if p2_threads:
-            command_args.append("--p2-threads")
-            command_args.append(str(p2_threads))
+            command_args.extend(("--p2-threads", str(p2_threads)))
         if p3_threads:
-            command_args.append("--p3-threads")
-            command_args.append(str(p3_threads))
+            command_args.extend(("--p3-threads", str(p3_threads)))
         if alternate:
             command_args.append("--alternate")
         if no_t1_direct:
@@ -791,21 +770,12 @@ class WebSocketServer:
         K = request.get("K", 1)  # Thread multiplier for phase 2
         G = request.get("G", False)  # Alternate tmpdir/tmp2dir
 
-        command_args: List[str] = []
-        command_args.append(f"-k{k}")
-        command_args.append(f"-u{u}")
-        command_args.append(f"-v{v}")
-        command_args.append(f"-K{K}")
-
+        command_args: List[str] = [f"-k{k}", f"-u{u}", f"-v{v}", f"-K{K}"]
         # Handle madmax's tmptoggle option ourselves when managing GUI plotting
         if G is True and t != t2 and index % 2:
-            # Swap tmp and tmp2
-            command_args.append(f"-t{t2}")
-            command_args.append(f"-2{t}")
+            command_args.extend((f"-t{t2}", f"-2{t}"))
         else:
-            command_args.append(f"-t{t}")
-            command_args.append(f"-2{t2}")
-
+            command_args.extend((f"-t{t}", f"-2{t2}"))
         return command_args
 
     def _build_plotting_command_args(self, request: Any, ignoreCount: bool, index: int) -> List[str]:
@@ -816,42 +786,45 @@ class WebSocketServer:
             # plotter command must be either
             # 'chia plotters bladebit ramplot' or 'chia plotters bladebit diskplot'
             plot_type = request["plot_type"]
-            assert plot_type == "diskplot" or plot_type == "ramplot"
+            assert plot_type in ["diskplot", "ramplot"]
             command_args.append(plot_type)
 
         command_args.extend(self._common_plotting_command_args(request, ignoreCount))
 
-        if plotter == "chiapos":
+        if plotter == "bladebit":
+            command_args.extend(self._bladebit_plotting_command_args(request, ignoreCount))
+
+        elif plotter == "chiapos":
             command_args.extend(self._chiapos_plotting_command_args(request, ignoreCount))
         elif plotter == "madmax":
             command_args.extend(self._madmax_plotting_command_args(request, ignoreCount, index))
-        elif plotter == "bladebit":
-            command_args.extend(self._bladebit_plotting_command_args(request, ignoreCount))
-
         return command_args
 
     def _is_serial_plotting_running(self, queue: str = "default") -> bool:
-        response = False
-        for item in self.plots_queue:
-            if item["queue"] == queue and item["parallel"] is False and item["state"] is PlotState.RUNNING:
-                response = True
-        return response
+        return any(
+            item["queue"] == queue
+            and item["parallel"] is False
+            and item["state"] is PlotState.RUNNING
+            for item in self.plots_queue
+        )
 
     def _get_plots_queue_item(self, id: str):
-        config = next(item for item in self.plots_queue if item["id"] == id)
-        return config
+        return next(item for item in self.plots_queue if item["id"] == id)
 
     def _run_next_serial_plotting(self, loop: asyncio.AbstractEventLoop, queue: str = "default"):
-        next_plot_id = None
-
         if self._is_serial_plotting_running(queue) is True:
             return None
 
-        for item in self.plots_queue:
-            if item["queue"] == queue and item["state"] is PlotState.SUBMITTED and item["parallel"] is False:
-                next_plot_id = item["id"]
-                break
-
+        next_plot_id = next(
+            (
+                item["id"]
+                for item in self.plots_queue
+                if item["queue"] == queue
+                and item["state"] is PlotState.SUBMITTED
+                and item["parallel"] is False
+            ),
+            None,
+        )
         if next_plot_id is not None:
             loop.create_task(self._start_plotting(next_plot_id, loop, queue))
 
@@ -946,13 +919,11 @@ class WebSocketServer:
         queue = request.get("queue", "default")
 
         if ("p" in request) and ("c" in request):
-            response = {
+            return {
                 "success": False,
                 "service_name": service_name,
                 "error": "Choose one of pool_contract_address and pool_public_key",
             }
-            return response
-
         ids: List[str] = []
         for k in range(count):
             id = str(uuid.uuid4())
@@ -992,13 +963,11 @@ class WebSocketServer:
             else:
                 log.info("Plotting will start automatically when previous plotting finish")
 
-        response = {
+        return {
             "success": True,
             "ids": ids,
             "service_name": service_name,
         }
-
-        return response
 
     async def stop_plotting(self, request: Dict[str, Any]) -> Dict[str, Any]:
         id = request["id"]
@@ -1047,18 +1016,15 @@ class WebSocketServer:
 
         error = None
         success = False
-        testing = False
         already_running = False
-        if "testing" in request:
-            testing = request["testing"]
-
+        testing = request.get("testing", False)
         if not validate_service(service_command):
             error = "unknown service"
 
         if service_command in self.services:
             service = self.services[service_command]
             r = service is not None and service.poll() is None
-            if r is False:
+            if not r:
                 self.services.pop(service_command)
                 error = None
             else:
@@ -1084,14 +1050,12 @@ class WebSocketServer:
                 log.exception(f"problem starting {service_command}")
                 error = "start failed"
 
-        response = {"success": success, "service": service_command, "error": error}
-        return response
+        return {"success": success, "service": service_command, "error": error}
 
     async def stop_service(self, request: Dict[str, Any]) -> Dict[str, Any]:
         service_name = request["service"]
         result = await kill_service(self.root_path, self.services, service_name)
-        response = {"success": result, "service_name": service_name}
-        return response
+        return {"success": result, "service_name": service_name}
 
     def is_service_running(self, service_name: str) -> bool:
         if service_name == service_plotter:
@@ -1189,7 +1153,7 @@ def launch_plotter(root_path: Path, service_name: str, service_array: List[str],
     service_array[0] = service_executable
     startupinfo = None
     creationflags = 0
-    if sys.platform == "win32" or sys.platform == "cygwin":
+    if sys.platform in ["win32", "cygwin"]:
         startupinfo = subprocess.STARTUPINFO()
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         # If the current process group is used, CTRL_C_EVENT will kill the parent and everyone in the group!
@@ -1240,14 +1204,14 @@ def launch_service(root_path: Path, service_command) -> Tuple[subprocess.Popen, 
     service_array[0] = service_executable
 
     startupinfo = None
-    if sys.platform == "win32" or sys.platform == "cygwin":
+    if sys.platform in ["win32", "cygwin"]:
         startupinfo = subprocess.STARTUPINFO()
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
 
     log.debug(f"Launching service {service_array} with CHIA_ROOT: {os.environ['CHIA_ROOT']}")
 
     # CREATE_NEW_PROCESS_GROUP allows graceful shutdown on windows, by CTRL_BREAK_EVENT signal
-    if sys.platform == "win32" or sys.platform == "cygwin":
+    if sys.platform in ["win32", "cygwin"]:
         creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
     else:
         creationflags = 0
@@ -1271,7 +1235,7 @@ async def kill_process(
 ) -> bool:
     pid_path = pid_path_for_service(root_path, service_name, id)
 
-    if sys.platform == "win32" or sys.platform == "cygwin":
+    if sys.platform in ["win32", "cygwin"]:
         log.info("sending CTRL_BREAK_EVENT signal to %s", service_name)
         # pylint: disable=E1101
         kill(process.pid, signal.SIGBREAK)
@@ -1309,8 +1273,9 @@ async def kill_service(
     if process is None:
         return False
     del services[service_name]
-    result = await kill_process(process, root_path, service_name, "", delay_before_kill)
-    return result
+    return await kill_process(
+        process, root_path, service_name, "", delay_before_kill
+    )
 
 
 def is_running(services: Dict[str, subprocess.Popen], service_name: str) -> bool:
@@ -1377,8 +1342,7 @@ async def async_run_daemon(root_path: Path, wait_for_unlock: bool = False) -> in
 
 
 def run_daemon(root_path: Path, wait_for_unlock: bool = False) -> int:
-    result = asyncio.run(async_run_daemon(root_path, wait_for_unlock))
-    return result
+    return asyncio.run(async_run_daemon(root_path, wait_for_unlock))
 
 
 def main() -> int:

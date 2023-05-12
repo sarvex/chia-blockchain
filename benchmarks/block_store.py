@@ -355,7 +355,7 @@ async def run_add_block_benchmark(version: int):
             print("profiling get_block_records_in_range")
 
         start = monotonic()
-        for i in range(100):
+        for _ in range(100):
             hi = random.randint(1, block_height - 100)
             blocks_dict = await block_store.get_block_records_in_range(hi, hi + 99)
             assert len(blocks_dict) == 100
@@ -400,7 +400,7 @@ async def run_add_block_benchmark(version: int):
             print("profiling get_random_not_compactified")
 
         start = monotonic()
-        for i in range(1, 5000):
+        for _ in range(1, 5000):
             blocks_int_list = await block_store.get_random_not_compactified(100)
             assert len(blocks_int_list) == 100
         stop = monotonic()

@@ -88,11 +88,7 @@ def create_foliage(
     random.seed(seed)
     # Use the extension data to create different blocks based on header hash
     extension_data: bytes32 = bytes32(random.randint(0, 100000000).to_bytes(32, "big"))
-    if prev_block is None:
-        height: uint32 = uint32(0)
-    else:
-        height = uint32(prev_block.height + 1)
-
+    height = uint32(0) if prev_block is None else uint32(prev_block.height + 1)
     # Create filter
     byte_array_tx: List[bytearray] = []
     tx_additions: List[Coin] = []
@@ -138,12 +134,8 @@ def create_foliage(
             )
             cost = result.cost
 
-            removal_amount = 0
-            addition_amount = 0
-            for coin in removals:
-                removal_amount += coin.amount
-            for coin in additions:
-                addition_amount += coin.amount
+            removal_amount = sum(coin.amount for coin in removals)
+            addition_amount = sum(coin.amount for coin in additions)
             spend_bundle_fees = removal_amount - addition_amount
         else:
             spend_bundle_fees = 0
@@ -213,9 +205,7 @@ def create_foliage(
 
         # Addition Merkle set contains puzzlehash and hash of all coins with that puzzlehash
         for puzzle, coin_ids in puzzlehash_coin_map.items():
-            additions_merkle_items.append(puzzle)
-            additions_merkle_items.append(hash_coin_ids(coin_ids))
-
+            additions_merkle_items.extend((puzzle, hash_coin_ids(coin_ids)))
         additions_root = bytes32(compute_merkle_set_root(additions_merkle_items))
         removals_root = bytes32(compute_merkle_set_root(tx_removals))
 
@@ -339,10 +329,6 @@ def create_unfinished_block(
         finished_sub_slots = finished_sub_slots_input.copy()
     overflow: bool = sp_iters > ip_iters
     total_iters_sp: uint128 = uint128(sub_slot_start_total_iters + sp_iters)
-    is_genesis: bool = prev_block is None
-
-    new_sub_slot: bool = len(finished_sub_slots) > 0
-
     cc_sp_hash: bytes32 = slot_cc_challenge
 
     # Only enters this if statement if we are in testing mode (making VDF proofs here)
@@ -351,9 +337,13 @@ def create_unfinished_block(
         cc_sp_hash = signage_point.cc_vdf.output.get_hash()
         rc_sp_hash = signage_point.rc_vdf.output.get_hash()
     else:
+        new_sub_slot: bool = len(finished_sub_slots) > 0
+
         if new_sub_slot:
             rc_sp_hash = finished_sub_slots[-1].reward_chain.get_hash()
         else:
+            is_genesis: bool = prev_block is None
+
             if is_genesis:
                 rc_sp_hash = constants.GENESIS_CHALLENGE
             else:

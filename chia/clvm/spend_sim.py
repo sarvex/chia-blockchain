@@ -187,9 +187,7 @@ class SpendSim:
         return list(coins)
 
     async def generate_transaction_generator(self, bundle: Optional[SpendBundle]) -> Optional[BlockGenerator]:
-        if bundle is None:
-            return None
-        return simple_solution_generator(bundle)
+        return None if bundle is None else simple_solution_generator(bundle)
 
     async def farm_block(
         self,
@@ -235,7 +233,12 @@ class SpendSim:
                     return_additions = additions
                     return_removals = removals
 
-                    await self.coin_store._add_coin_records([self.new_coin_record(addition) for addition in additions])
+                    await self.coin_store._add_coin_records(
+                        [
+                            self.new_coin_record(addition)
+                            for addition in return_additions
+                        ]
+                    )
                     await self.coin_store._set_spent([r.name() for r in removals], uint32(self.block_height + 1))
 
         # SimBlockRecord is created
@@ -275,10 +278,7 @@ class SpendSim:
         await self.coin_store.rollback_to_block(block_height)
         self.mempool_manager.mempool.spends = {}
         self.block_height = block_height
-        if new_br_list:
-            self.timestamp = new_br_list[-1].timestamp
-        else:
-            self.timestamp = uint64(1)
+        self.timestamp = new_br_list[-1].timestamp if new_br_list else uint64(1)
 
 
 class SimClient:
@@ -396,23 +396,17 @@ class SimClient:
         error, puzzle, solution = get_puzzle_and_solution_for_coin(generator, coin_record.coin)
         if error:
             return None
-        else:
-            assert puzzle is not None
-            assert solution is not None
-            return CoinSpend(coin_record.coin, puzzle, solution)
+        assert puzzle is not None
+        assert solution is not None
+        return CoinSpend(coin_record.coin, puzzle, solution)
 
     async def get_all_mempool_tx_ids(self) -> List[bytes32]:
         return list(self.service.mempool_manager.mempool.spends.keys())
 
     async def get_all_mempool_items(self) -> Dict[bytes32, MempoolItem]:
-        spends = {}
-        for tx_id, item in self.service.mempool_manager.mempool.spends.items():
-            spends[tx_id] = item
+        spends = dict(self.service.mempool_manager.mempool.spends.items())
         return spends
 
     async def get_mempool_item_by_tx_id(self, tx_id: bytes32) -> Optional[Dict[str, Any]]:
         item = self.service.mempool_manager.get_mempool_item(tx_id)
-        if item is None:
-            return None
-        else:
-            return item.__dict__
+        return None if item is None else item.__dict__

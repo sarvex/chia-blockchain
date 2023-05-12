@@ -202,7 +202,7 @@ class DataLayerWallet:
             [launcher_id], peer=peer
         )
 
-        if len(coin_states) == 0:
+        if not coin_states:
             raise ValueError(f"Launcher ID {launcher_id} is not a valid coin")
         if coin_states[0].coin.puzzle_hash != SINGLETON_LAUNCHER.get_tree_hash():
             raise ValueError(f"Coin with ID {launcher_id} is not a singleton launcher")
@@ -252,16 +252,7 @@ class DataLayerWallet:
         singleton_record: Optional[SingletonRecord] = await self.wallet_state_manager.dl_store.get_latest_singleton(
             launcher_id
         )
-        if singleton_record is not None:
-            if (  # This is an unconfirmed singleton that we know about
-                singleton_record.coin_id == new_singleton.name() and not singleton_record.confirmed
-            ):
-                timestamp = await self.wallet_state_manager.wallet_node.get_timestamp_for_height(height)
-                await self.wallet_state_manager.dl_store.set_confirmed(singleton_record.coin_id, height, timestamp)
-            else:
-                self.log.info(f"Spend of launcher {launcher_id} has already been processed")
-                return None
-        else:
+        if singleton_record is None:
             timestamp = await self.wallet_state_manager.wallet_node.get_timestamp_for_height(height)
             await self.wallet_state_manager.dl_store.add_singleton_record(
                 SingletonRecord(
@@ -281,6 +272,14 @@ class DataLayerWallet:
                 )
             )
 
+        elif (  # This is an unconfirmed singleton that we know about
+                singleton_record.coin_id == new_singleton.name() and not singleton_record.confirmed
+            ):
+            timestamp = await self.wallet_state_manager.wallet_node.get_timestamp_for_height(height)
+            await self.wallet_state_manager.dl_store.set_confirmed(singleton_record.coin_id, height, timestamp)
+        else:
+            self.log.info(f"Spend of launcher {launcher_id} has already been processed")
+            return None
         await self.wallet_state_manager.dl_store.add_launcher(launcher_spend.coin)
         await self.wallet_state_manager.add_interested_puzzle_hashes([launcher_id], [self.id()])
         await self.wallet_state_manager.add_interested_coin_ids([new_singleton.name()])
@@ -515,7 +514,7 @@ class DataLayerWallet:
             )
             root_announce = Announcement(second_full_puz.get_tree_hash(), b"$")
             if puzzle_announcements_to_consume is None:
-                puzzle_announcements_to_consume = set((root_announce,))
+                puzzle_announcements_to_consume = {root_announce}
             else:
                 puzzle_announcements_to_consume.add(root_announce)
             second_singleton_record = SingletonRecord(
@@ -653,19 +652,17 @@ class DataLayerWallet:
         announce_new_state: bool = False,
     ) -> List[TransactionRecord]:
         # Figure out the launcher ID
-        if len(coins) == 0:
-            if launcher_id is None:
-                raise ValueError("Not enough info to know which DL coin to send")
-        else:
+        if coins:
             if len(coins) != 1:
                 raise ValueError("The wallet can only send one DL coin at a time")
+            record = await self.wallet_state_manager.dl_store.get_singleton_record(next(iter(coins)).name())
+            if record is None:
+                raise ValueError("The specified coin is not a tracked DL")
             else:
-                record = await self.wallet_state_manager.dl_store.get_singleton_record(next(iter(coins)).name())
-                if record is None:
-                    raise ValueError("The specified coin is not a tracked DL")
-                else:
-                    launcher_id = record.launcher_id
+                launcher_id = record.launcher_id
 
+        elif launcher_id is None:
+            raise ValueError("Not enough info to know which DL coin to send")
         if len(amounts) != 1 or len(puzzle_hashes) != 1:
             raise ValueError("The wallet can only send one DL coin to one place at a time")
 
@@ -704,12 +701,11 @@ class DataLayerWallet:
         if parent_singleton is None:
             if singleton_record.lineage_proof.parent_name != launcher_id:
                 raise ValueError(f"Have not found the parent of singleton with launcher ID {launcher_id}")
+            launcher_coin: Optional[Coin] = await self.wallet_state_manager.dl_store.get_launcher(launcher_id)
+            if launcher_coin is None:
+                raise ValueError(f"DL Wallet does not have launcher info for id {launcher_id}")
             else:
-                launcher_coin: Optional[Coin] = await self.wallet_state_manager.dl_store.get_launcher(launcher_id)
-                if launcher_coin is None:
-                    raise ValueError(f"DL Wallet does not have launcher info for id {launcher_id}")
-                else:
-                    parent_lineage = LineageProof(launcher_coin.parent_coin_info, None, uint64(launcher_coin.amount))
+                parent_lineage = LineageProof(launcher_coin.parent_coin_info, None, uint64(launcher_coin.amount))
         else:
             parent_lineage = parent_singleton.lineage_proof
 
@@ -739,12 +735,14 @@ class DataLayerWallet:
     async def create_new_mirror(
         self, launcher_id: bytes32, amount: uint64, urls: List[bytes], fee: uint64 = uint64(0)
     ) -> List[TransactionRecord]:
-        create_mirror_tx_record: Optional[TransactionRecord] = await self.standard_wallet.generate_signed_transaction(
+        create_mirror_tx_record: Optional[
+            TransactionRecord
+        ] = await self.standard_wallet.generate_signed_transaction(
             amount=amount,
             puzzle_hash=create_mirror_puzzle().get_tree_hash(),
             fee=fee,
             primaries=[],
-            memos=[launcher_id, *(url for url in urls)],
+            memos=[launcher_id, *iter(urls)],
             ignore_max_send_amount=False,
         )
         assert create_mirror_tx_record is not None and create_mirror_tx_record.spend_bundle is not None
@@ -950,11 +948,9 @@ class DataLayerWallet:
         parent_name = unconfirmed_singletons[0].lineage_proof.parent_name
         assert parent_name is not None
         parent_singleton = await self.wallet_state_manager.dl_store.get_singleton_record(parent_name)
-        if parent_singleton is None or any(parent_singleton.root != s.root for s in full_branch if s.confirmed):
-            root_changed: bool = True
-        else:
-            root_changed = False
-
+        root_changed = parent_singleton is None or any(
+            parent_singleton.root != s.root for s in full_branch if s.confirmed
+        )
         # Regardless of whether the root changed or not, our old state is bad so let's eliminate it
         # First let's find all of our txs matching our unconfirmed singletons
         relevant_dl_txs: List[TransactionRecord] = []
@@ -989,11 +985,7 @@ class DataLayerWallet:
                 for singleton in unconfirmed_singletons:
                     for tx in relevant_dl_txs:
                         if any(c.name() == singleton.coin_id for c in tx.additions):
-                            if tx.spend_bundle is not None:
-                                fee = uint64(tx.spend_bundle.fees())
-                            else:
-                                fee = uint64(0)
-
+                            fee = uint64(0) if tx.spend_bundle is None else uint64(tx.spend_bundle.fees())
                             all_txs.extend(
                                 await self.create_update_state_spend(
                                     launcher_id,
@@ -1118,12 +1110,12 @@ class DataLayerWallet:
         return PuzzleInfo(
             {
                 "type": AssetType.SINGLETON.value,
-                "launcher_id": "0x" + launcher_id.hex(),
-                "launcher_ph": "0x" + SINGLETON_LAUNCHER_HASH.hex(),
+                "launcher_id": f"0x{launcher_id.hex()}",
+                "launcher_ph": f"0x{SINGLETON_LAUNCHER_HASH.hex()}",
                 "also": {
                     "type": AssetType.METADATA.value,
                     "metadata": f"(0x{record.root} . ())",
-                    "updater_hash": "0x" + ACS_MU_PH.hex(),
+                    "updater_hash": f"0x{ACS_MU_PH.hex()}",
                 },
             }
         )
@@ -1137,7 +1129,13 @@ class DataLayerWallet:
         ).get_tree_hash_precalc(record.inner_puzzle_hash)
         assert record.lineage_proof.parent_name is not None
         assert record.lineage_proof.amount is not None
-        return set([Coin(record.lineage_proof.parent_name, puzhash, record.lineage_proof.amount)])
+        return {
+            Coin(
+                record.lineage_proof.parent_name,
+                puzhash,
+                record.lineage_proof.amount,
+            )
+        }
 
     @staticmethod
     async def make_update_offer(
@@ -1147,11 +1145,14 @@ class DataLayerWallet:
         solver: Solver,
         fee: uint64 = uint64(0),
     ) -> Offer:
-        dl_wallet = None
-        for wallet in wallet_state_manager.wallets.values():
-            if wallet.type() == WalletType.DATA_LAYER.value:
-                dl_wallet = wallet
-                break
+        dl_wallet = next(
+            (
+                wallet
+                for wallet in wallet_state_manager.wallets.values()
+                if wallet.type() == WalletType.DATA_LAYER.value
+            ),
+            None,
+        )
         if dl_wallet is None:
             raise ValueError("DL Wallet is not initialized")
 
@@ -1162,7 +1163,7 @@ class DataLayerWallet:
             try:
                 this_solver: Solver = solver[launcher.hex()]
             except KeyError:
-                this_solver = solver["0x" + launcher.hex()]
+                this_solver = solver[f"0x{launcher.hex()}"]
             new_root: bytes32 = this_solver["new_root"]
             new_ph: bytes32 = await wallet_state_manager.main_wallet.get_new_puzzlehash()
             txs: List[TransactionRecord] = await dl_wallet.generate_signed_transaction(
@@ -1185,8 +1186,14 @@ class DataLayerWallet:
             dl_solution: Program = dl_spend.solution.to_program()
             old_graftroot: Program = dl_solution.at("rrffrf")
             new_graftroot: Program = create_graftroot_offer_puz(
-                [bytes32(dep["launcher_id"]) for dep in this_solver["dependencies"]],
-                [list(v for v in dep["values_to_prove"]) for dep in this_solver["dependencies"]],
+                [
+                    bytes32(dep["launcher_id"])
+                    for dep in this_solver["dependencies"]
+                ],
+                [
+                    list(dep["values_to_prove"])
+                    for dep in this_solver["dependencies"]
+                ],
                 old_graftroot,
             )
 
@@ -1369,7 +1376,7 @@ def verify_offer(
         roots = {proof.root_hash for proof in proofs}
         if len(roots) > 1:
             raise OfferIntegrityError("maker: multiple roots referenced for a single store id")
-        if len(roots) < 1:
+        if not roots:
             raise OfferIntegrityError("maker: no roots referenced for store id")
 
     # TODO: what about validating duplicate entries are consistent?

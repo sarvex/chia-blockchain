@@ -75,8 +75,12 @@ async def _dot_dump(data_store: DataStore, store_id: bytes32, root_hash: bytes32
         left = internal_node.left_hash.hex()
         right = internal_node.right_hash.hex()
         dot_nodes.append(f"""node_{hash} [label="{hash[:n]}"]""")
-        dot_connections.append(f"""node_{hash} -> node_{left} [label="L"];""")
-        dot_connections.append(f"""node_{hash} -> node_{right} [label="R"];""")
+        dot_connections.extend(
+            (
+                f"""node_{hash} -> node_{left} [label="L"];""",
+                f"""node_{hash} -> node_{right} [label="R"];""",
+            )
+        )
         dot_pair_boxes.append(
             f"node [shape = box]; " f"{{rank = same; node_{left}->node_{right}[style=invis]; rankdir = LR}}"
         )
@@ -113,10 +117,7 @@ class Side(IntEnum):
     RIGHT = 1
 
     def other(self) -> "Side":
-        if self == Side.LEFT:
-            return Side.RIGHT
-
-        return Side.LEFT
+        return Side.RIGHT if self == Side.LEFT else Side.LEFT
 
     @classmethod
     def unmarshal(cls, o: str) -> Side:
@@ -233,10 +234,7 @@ class ProofOfInclusion:
 
             existing_hash = calculated_hash
 
-        if existing_hash != self.root_hash:
-            return False
-
-        return True
+        return existing_hash == self.root_hash
 
 
 @dataclass(frozen=True)
@@ -287,11 +285,7 @@ class Root:
     @classmethod
     def from_row(cls, row: aiosqlite.Row) -> "Root":
         raw_node_hash = row["node_hash"]
-        if raw_node_hash is None:
-            node_hash = None
-        else:
-            node_hash = bytes32(raw_node_hash)
-
+        node_hash = None if raw_node_hash is None else bytes32(raw_node_hash)
         return cls(
             tree_id=bytes32(row["tree_id"]),
             node_hash=node_hash,

@@ -37,7 +37,7 @@ def get_signage_point_vdf_info(
         cc_vdf_challenge = finished_sub_slots[-1].challenge_chain.get_hash()
         sp_vdf_iters = sp_iters
         cc_vdf_input = ClassgroupElement.get_default_element()
-    elif new_sub_slot and overflow and len(finished_sub_slots) > 1:
+    elif new_sub_slot and len(finished_sub_slots) > 1:
         # Case 2: start from start of prev slot. This is a rare case of empty prev slot. Includes genesis block after
         # 2 empty slots
         rc_vdf_challenge = finished_sub_slots[-2].reward_chain.get_hash()
@@ -50,7 +50,7 @@ def get_signage_point_vdf_info(
         cc_vdf_challenge = constants.GENESIS_CHALLENGE
         sp_vdf_iters = sp_iters
         cc_vdf_input = ClassgroupElement.get_default_element()
-    elif new_sub_slot and overflow and len(finished_sub_slots) == 1:
+    elif new_sub_slot and len(finished_sub_slots) == 1:
         # Case 4: Starting at prev will put us in the previous, sub-slot, since case 2 handled more empty slots
         assert prev_b is not None
         curr: BlockRecord = prev_b
@@ -121,7 +121,7 @@ def get_signage_point_vdf_info(
             rc_vdf_challenge = found_sub_slots[1][1]
         cc_vdf_challenge = found_sub_slots[1][0]
 
-    elif not new_sub_slot and not overflow:
+    elif not new_sub_slot:
         # Case 6: prev is in the same sub slot. Starting at prev does not skip any sub slots. We do not need
         # to go back another sub slot, because it's not overflow, so the VDF to signage point is this sub-slot.
         assert prev_b is not None

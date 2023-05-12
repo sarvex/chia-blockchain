@@ -44,7 +44,7 @@ class DataLayerServer:
         if self.webserver is not None:
             raise RuntimeError("DataLayerServer already started")
 
-        if sys.platform == "win32" or sys.platform == "cygwin":
+        if sys.platform in ["win32", "cygwin"]:
             # pylint: disable=E1101
             signal.signal(signal.SIGBREAK, self._accept_signal)
             signal.signal(signal.SIGINT, self._accept_signal)
@@ -103,12 +103,11 @@ class DataLayerServer:
         file_path = self.server_dir.joinpath(filename)
         with open(file_path, "rb") as reader:
             content = reader.read()
-        response = web.Response(
+        return web.Response(
             content_type="application/octet-stream",
-            headers={"Content-Disposition": "attachment;filename={}".format(filename)},
+            headers={"Content-Disposition": f"attachment;filename={filename}"},
             body=content,
         )
-        return response
 
     def _accept_signal(self, signal_number: int, stack_frame: Any = None) -> None:
         self.log.info("Got SIGINT or SIGTERM signal - stopping")

@@ -29,7 +29,7 @@ def make_coin() -> Coin:
 def make_coins(num: int) -> Tuple[List[Coin], List[bytes32]]:
     additions: List[Coin] = []
     hashes: List[bytes32] = []
-    for i in range(num):
+    for _ in range(num):
         c = make_coin()
         additions.append(c)
         hashes.append(c.name())
@@ -239,7 +239,7 @@ async def run_new_block_benchmark(version: int):
             print("profiling get_coin_records_by_names, include_spent ", end="")
         total_time = 0
         found_coins = 0
-        for i in range(NUM_ITERS):
+        for _ in range(NUM_ITERS):
             lookup = random.sample(all_coins, 200)
             start = monotonic()
             records = await coin_store.get_coin_records_by_names(True, lookup)
@@ -262,7 +262,7 @@ async def run_new_block_benchmark(version: int):
             print("profiling get_coin_records_by_names, without spent coins ", end="")
         total_time = 0
         found_coins = 0
-        for i in range(NUM_ITERS):
+        for _ in range(NUM_ITERS):
             lookup = random.sample(all_coins, 200)
             start = monotonic()
             records = await coin_store.get_coin_records_by_names(False, lookup)

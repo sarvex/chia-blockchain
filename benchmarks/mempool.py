@@ -38,11 +38,20 @@ def enable_profiler(profile: bool, name: str) -> Iterator[None]:
 
     pr.create_stats()
     output_file = f"mempool-{name}"
-    pr.dump_stats(output_file + ".profile")
-    check_call(["gprof2dot", "-f", "pstats", "-o", output_file + ".dot", output_file + ".profile"])
-    with open(output_file + ".png", "w+") as f:
-        check_call(["dot", "-T", "png", output_file + ".dot"], stdout=f)
-    print("output written to: %s.png" % output_file)
+    pr.dump_stats(f"{output_file}.profile")
+    check_call(
+        [
+            "gprof2dot",
+            "-f",
+            "pstats",
+            "-o",
+            f"{output_file}.dot",
+            f"{output_file}.profile",
+        ]
+    )
+    with open(f"{output_file}.png", "w+") as f:
+        check_call(["dot", "-T", "png", f"{output_file}.dot"], stdout=f)
+    print(f"output written to: {output_file}.png")
 
 
 def fake_block_record(block_height: uint32, timestamp: uint64) -> BlockRecord:
@@ -108,13 +117,7 @@ async def run_mempool_benchmark(single_threaded: bool) -> None:
                     height, wt.get_new_puzzlehash(), uint64(1750000000), DEFAULT_CONSTANTS.GENESIS_CHALLENGE
                 )
                 unspent.extend([farmer_coin, pool_coin])
-                await coin_store.new_block(
-                    height,
-                    timestamp,
-                    set([pool_coin, farmer_coin]),
-                    [],
-                    [],
-                )
+                await coin_store.new_block(height, timestamp, {pool_coin, farmer_coin}, [], [])
 
             bundles: List[SpendBundle] = []
 
@@ -171,8 +174,6 @@ async def run_mempool_benchmark(single_threaded: bool) -> None:
                 mempool.create_bundle_from_mempool(bytes32(b"a" * 32))
             stop = monotonic()
         print(f"create_bundle_from_mempool time: {stop - start:0.4f}s")
-
-    # TODO: add benchmark for new_peak()
 
     finally:
         await db_wrapper.close()

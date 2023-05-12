@@ -20,7 +20,7 @@ def main():
         dev_release_number = ""
     elif len(version) == 4:
         smc_patch_version = version[2]
-        dev_release_number = "-" + version[3]
+        dev_release_number = f"-{version[3]}"
     else:
         smc_patch_version = ""
         dev_release_number = ""
@@ -28,21 +28,20 @@ def main():
     major_release_number = scm_major_version
     minor_release_number = scm_minor_version
 
-    # If this is a beta dev release, get which beta it is
     if "0b" in scm_minor_version:
         orignial_minor_ver_list = scm_minor_version.split("0b")
         major_release_number = str(1 - int(scm_major_version))  # decrement the major release for beta
         minor_release_number = scm_major_version
         patch_release_number = orignial_minor_ver_list[1]
         if smc_patch_version and "dev" in smc_patch_version:
-            dev_release_number = "." + smc_patch_version
-    elif "0rc" in version[1]:
+            dev_release_number = f".{smc_patch_version}"
+    elif "0rc" in scm_minor_version:
         original_minor_ver_list = scm_minor_version.split("0rc")
         major_release_number = str(1 - int(scm_major_version))  # decrement the major release for release candidate
         minor_release_number = str(int(scm_major_version) + 1)  # RC is 0.2.1 for RC 1
         patch_release_number = original_minor_ver_list[1]
         if smc_patch_version and "dev" in smc_patch_version:
-            dev_release_number = "." + smc_patch_version
+            dev_release_number = f".{smc_patch_version}"
     elif len(version) == 2:
         patch_release_number = "0"
     elif len(version) == 4:  # for 1.0.5.dev2
@@ -53,13 +52,13 @@ def main():
         patch_release_number = smc_patch_version
         dev_release_number = ""
 
-    install_release_number = major_release_number + "." + minor_release_number
+    install_release_number = f"{major_release_number}.{minor_release_number}"
     if len(patch_release_number) > 0:
-        install_release_number += "." + patch_release_number
+        install_release_number += f".{patch_release_number}"
     if len(dev_release_number) > 0:
         install_release_number += dev_release_number
 
-    print(str(install_release_number))
+    print(install_release_number)
 
 
 if __name__ == "__main__":

@@ -93,11 +93,7 @@ async def write_files_for_root(
     foldername: Path,
     overwrite: bool = False,
 ) -> bool:
-    if root.node_hash is not None:
-        node_hash = root.node_hash
-    else:
-        node_hash = bytes32([0] * 32)  # todo change
-
+    node_hash = root.node_hash if root.node_hash is not None else bytes32([0] * 32)
     filename_full_tree = foldername.joinpath(get_full_tree_filename(tree_id, node_hash, root.generation))
     filename_diff_tree = foldername.joinpath(get_delta_filename(tree_id, node_hash, root.generation))
 
@@ -146,9 +142,7 @@ async def insert_from_delta_file(
         try:
             async with aiohttp.ClientSession() as session:
                 headers = {"accept-encoding": "gzip"}
-                async with session.get(
-                    server_info.url + "/" + filename, headers=headers, timeout=timeout, proxy=proxy_url
-                ) as resp:
+                async with session.get(f"{server_info.url}/{filename}", headers=headers, timeout=timeout, proxy=proxy_url) as resp:
                     resp.raise_for_status()
                     size = int(resp.headers.get("content-length", 0))
                     log.debug(f"Downloading delta file {filename}. Size {size} bytes.")

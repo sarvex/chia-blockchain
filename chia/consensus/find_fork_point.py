@@ -27,9 +27,4 @@ def find_fork_point_in_chain(
                 return block_2.height
             block_2 = blocks.block_record(block_2.prev_hash)
             block_1 = blocks.block_record(block_1.prev_hash)
-    if block_2 != block_1:
-        # All blocks are different
-        return -1
-
-    # First block is the same
-    return 0
+    return -1 if block_2 != block_1 else 0

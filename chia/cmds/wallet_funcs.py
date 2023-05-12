@@ -77,8 +77,8 @@ async def get_wallet_type(wallet_id: int, wallet_client: WalletRpcClient) -> Wal
     summaries_response = await wallet_client.get_wallets()
     for summary in summaries_response:
         summary_id: int = summary["id"]
-        summary_type: int = summary["type"]
         if wallet_id == summary_id:
+            summary_type: int = summary["type"]
             return WalletType(summary_type)
 
     raise LookupError(f"Wallet ID not found: {wallet_id}")
@@ -146,7 +146,7 @@ async def get_transactions(args: dict, wallet_client: WalletRpcClient, fingerpri
 
     config = load_config(DEFAULT_ROOT_PATH, "config.yaml", SERVICE_NAME)
     address_prefix = selected_network_address_prefix(config)
-    if len(txs) == 0:
+    if not txs:
         print("There are no transactions to this address")
 
     try:
@@ -179,10 +179,10 @@ async def get_transactions(args: dict, wallet_client: WalletRpcClient, fingerpri
         print("Press q to quit, or c to continue")
         while True:
             entered_key = sys.stdin.read(1)
-            if entered_key == "q":
-                return None
-            elif entered_key == "c":
+            if entered_key == "c":
                 break
+            elif entered_key == "q":
+                return None
 
 
 def check_unusual_transaction(amount: Decimal, fee: Decimal):
@@ -199,11 +199,7 @@ async def send(args: dict, wallet_client: WalletRpcClient, fingerprint: int) -> 
     max_coin_amount = Decimal(args["max_coin_amount"])
     exclude_coin_ids: List[str] = args["exclude_coin_ids"]
     memo = args["memo"]
-    if memo is None:
-        memos = None
-    else:
-        memos = [memo]
-
+    memos = None if memo is None else [memo]
     if not override and check_unusual_transaction(amount, fee):
         print(
             f"A transaction of amount {amount} and fee {fee} is unusual.\n"
@@ -331,15 +327,12 @@ async def make_offer(args: dict, wallet_client: WalletRpcClient, fingerprint: in
         royalty_asset_dict: Dict[Any, Tuple[Any, uint16]] = {}
         fungible_asset_dict: Dict[Any, uint64] = {}
         for item in [*offers, *requests]:
-            name, amount = tuple(item.split(":")[0:2])
+            name, amount = tuple(item.split(":")[:2])
             try:
                 b32_id = bytes32.from_hexstr(name)
                 id: Union[uint32, str] = b32_id.hex()
                 result = await wallet_client.cat_asset_id_to_name(b32_id)
-                if result is not None:
-                    name = result[1]
-                else:
-                    name = "Unknown CAT"
+                name = result[1] if result is not None else "Unknown CAT"
                 unit = units["cat"]
                 if item in offers:
                     fungible_asset_dict[name] = uint64(abs(int(Decimal(amount) * unit)))
@@ -355,12 +348,12 @@ async def make_offer(args: dict, wallet_client: WalletRpcClient, fingerprint: in
                         if item in requests:
                             driver_dict[id] = {
                                 "type": "singleton",
-                                "launcher_id": "0x" + id,
-                                "launcher_ph": "0x" + info.launcher_puzhash.hex(),
+                                "launcher_id": f"0x{id}",
+                                "launcher_ph": f"0x{info.launcher_puzhash.hex()}",
                                 "also": {
                                     "type": "metadata",
                                     "metadata": info.chain_info,
-                                    "updater_hash": "0x" + info.updater_puzhash.hex(),
+                                    "updater_hash": f"0x{info.updater_puzhash.hex()}",
                                 },
                             }
                             if info.supports_did:
@@ -371,9 +364,11 @@ async def make_offer(args: dict, wallet_client: WalletRpcClient, fingerprint: in
                                     "owner": "()",
                                     "transfer_program": {
                                         "type": "royalty transfer program",
-                                        "launcher_id": "0x" + info.launcher_id.hex(),
-                                        "royalty_address": "0x" + info.royalty_puzzle_hash.hex(),
-                                        "royalty_percentage": str(info.royalty_percentage),
+                                        "launcher_id": f"0x{info.launcher_id.hex()}",
+                                        "royalty_address": f"0x{info.royalty_puzzle_hash.hex()}",
+                                        "royalty_percentage": str(
+                                            info.royalty_percentage
+                                        ),
                                     },
                                 }
                                 royalty_asset_dict[name] = (
@@ -492,13 +487,13 @@ async def print_offer_summary(cat_name_resolver: CATNameResolver, sum_dict: Dict
                     name = result[1]
         output: str = f"    - {name}"
         mojo_str: str = f"{mojo_amount} {'mojo' if mojo_amount == 1 else 'mojos'}"
-        if len(wid) > 0:
+        if wid != "":
             output += f" (Wallet ID: {wid})"
         if unit == units["mojo"]:
             output += f": {mojo_str}"
         else:
             output += f": {mojo_amount / unit} ({mojo_str})"
-        if len(description) > 0:
+        if description != "":
             output += f" {description}"
         print(output)
 
@@ -721,9 +716,7 @@ def print_balance(amount: int, scale: int, address_prefix: str, *, decimal_only:
 
 
 async def print_balances(args: dict, wallet_client: WalletRpcClient, fingerprint: int) -> None:
-    wallet_type: Optional[WalletType] = None
-    if "type" in args:
-        wallet_type = WalletType(args["type"])
+    wallet_type = WalletType(args["type"]) if "type" in args else None
     summaries_response = await wallet_client.get_wallets(wallet_type)
     config = load_config(DEFAULT_ROOT_PATH, "config.yaml")
     address_prefix = selected_network_address_prefix(config)
@@ -745,8 +738,8 @@ async def print_balances(args: dict, wallet_client: WalletRpcClient, fingerprint
             print(f"\nNo wallets{type_hint}available for fingerprint: {fingerprint}")
         else:
             print(f"Balances, fingerprint: {fingerprint}")
+        indent: str = "   "
         for summary in summaries_response:
-            indent: str = "   "
             # asset_id currently contains both the asset ID and TAIL program bytes concatenated together.
             # A future RPC update may split them apart, but for now we'll show the first 32 bytes (64 chars)
             asset_id = summary["data"][:64]
@@ -866,9 +859,8 @@ async def mint_nft(args: Dict, wallet_client: WalletRpcClient, fingerprint: int)
                 raise ValueError("Disabling DID ownership is not supported for this NFT wallet, it does have a DID")
             else:
                 did_id = None
-        else:
-            if not wallet_has_did:
-                did_id = ""
+        elif not wallet_has_did:
+            did_id = ""
 
         response = await wallet_client.mint_nft(
             wallet_id,

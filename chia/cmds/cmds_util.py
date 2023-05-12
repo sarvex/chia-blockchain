@@ -121,7 +121,7 @@ async def get_wallet(root_path: Path, wallet_client: WalletRpcClient, fingerprin
         all_keys = await keychain_proxy.get_keys(include_secrets=False)
         # we don't immediately close the keychain proxy connection because it takes a noticeable amount of time
         fingerprints = [key.fingerprint for key in all_keys]
-        if len(fingerprints) == 0:
+        if not fingerprints:
             print("No keys loaded. Run 'chia keys generate' or import a key")
         elif len(fingerprints) == 1:
             # if only a single key is available, select it automatically
@@ -153,7 +153,7 @@ async def get_wallet(root_path: Path, wallet_client: WalletRpcClient, fingerprin
         print()
         print("Wallet Keys:")
         for i, key in enumerate(all_keys):
-            key_index_str = f"{(str(i + 1) + ')'):<4}"
+            key_index_str = f"{f'{str(i + 1)})':<4}"
             key_index_str += "*" if key.fingerprint == logged_in_fingerprint else " "
             print(
                 f"{key_index_str:<{max_key_index_width}} "

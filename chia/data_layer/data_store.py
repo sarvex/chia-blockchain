@@ -174,11 +174,7 @@ class DataStore:
             if generation is None:
                 existing_generation = await self.get_tree_generation(tree_id=tree_id)
 
-                if existing_generation is None:
-                    generation = 0
-                else:
-                    generation = existing_generation + 1
-
+                generation = 0 if existing_generation is None else existing_generation + 1
             await writer.execute(
                 """
                 INSERT INTO root(tree_id, generation, node_hash, status)
@@ -404,7 +400,7 @@ class DataStore:
                 if actual_generations != expected_generations:
                     bad_trees.append(tree_id)
 
-            if len(bad_trees) > 0:
+            if bad_trees:
                 raise TreeGenerationIncrementingError(tree_ids=bad_trees)
 
     async def _check_hashes(self) -> None:
@@ -422,7 +418,7 @@ class DataStore:
                 if node.hash != expected_hash:
                     bad_node_hashes.append(node.hash)
 
-        if len(bad_node_hashes) > 0:
+        if bad_node_hashes:
             raise NodeHashError(node_hashes=bad_node_hashes)
 
     _checks: Tuple[Callable[["DataStore"], Awaitable[None]], ...] = (
@@ -488,9 +484,7 @@ class DataStore:
             )
             row = await cursor.fetchone()
 
-        if row is None:
-            return False
-        return True
+        return row is not None
 
     async def get_roots_between(self, tree_id: bytes32, generation_begin: int, generation_end: int) -> List[Root]:
         async with self.db_wrapper.reader() as reader:
@@ -518,9 +512,7 @@ class DataStore:
             )
             row = await cursor.fetchone()
 
-        if row is None:
-            return None
-        return Root.from_row(row=row)
+        return None if row is None else Root.from_row(row=row)
 
     async def get_ancestors(
         self,
@@ -581,9 +573,8 @@ class DataStore:
                 nodes.append(internal_node)
                 node_hash = internal_node.hash
 
-            if len(nodes) > 0:
-                if root.node_hash != nodes[-1].hash:
-                    raise RuntimeError("Ancestors list didn't produce the root as top result.")
+            if nodes and root.node_hash != nodes[-1].hash:
+                raise RuntimeError("Ancestors list didn't produce the root as top result.")
 
             return nodes
 
@@ -688,10 +679,7 @@ class DataStore:
                 assert node is not None
                 if isinstance(node, TerminalNode):
                     break
-                if path % 2 == 0:
-                    node_hash = node.left_hash
-                else:
-                    node_hash = node.right_hash
+                node_hash = node.left_hash if path % 2 == 0 else node.right_hash
                 path = path // 2
 
             return node_hash
@@ -780,9 +768,8 @@ class DataStore:
                     pairs = await self.get_keys_values(tree_id=tree_id)
                     if any(key == node.key for node in pairs):
                         raise Exception(f"Key already present: {key.hex()}")
-                else:
-                    if bytes(key) in hint_keys_values:
-                        raise Exception(f"Key already present: {key.hex()}")
+                elif bytes(key) in hint_keys_values:
+                    raise Exception(f"Key already present: {key.hex()}")
 
             if reference_node_hash is None:
                 if not was_empty:
@@ -972,9 +959,9 @@ class DataStore:
                     side = change.get("side", None)
                     if reference_node_hash is None and side is None:
                         await self.autoinsert(key, value, tree_id, hint_keys_values, True, Status.COMMITTED)
+                    elif reference_node_hash is None or side is None:
+                        raise Exception("Provide both reference_node_hash and side or neither.")
                     else:
-                        if reference_node_hash is None or side is None:
-                            raise Exception("Provide both reference_node_hash and side or neither.")
                         await self.insert(
                             key,
                             value,
@@ -993,7 +980,7 @@ class DataStore:
 
             root = await self.get_tree_root(tree_id=tree_id)
             if root.node_hash == old_root.node_hash:
-                if len(changelist) != 0:
+                if changelist:
                     await self.rollback_to_generation(tree_id, old_root.generation)
                 raise ValueError("Changelist resulted in no change to tree data")
             # We delete all "temporary" records stored in root and ancestor tables and store only the final result.
@@ -1040,9 +1027,7 @@ class DataStore:
                 {"hash": node_hash, "tree_id": tree_id, "generation": generation},
             )
             row = await cursor.fetchone()
-            if row is None:
-                return None
-            return InternalNode.from_row(row=row)
+            return None if row is None else InternalNode.from_row(row=row)
 
     async def build_ancestor_table_for_latest_root(self, tree_id: bytes32) -> None:
         async with self.db_wrapper.writer():
@@ -1059,7 +1044,7 @@ class DataStore:
                     tree_id=tree_id,
                     root_hash=previous_root.node_hash,
                 )
-                known_hashes: Set[bytes32] = set(node.hash for node in previous_internal_nodes)
+                known_hashes: Set[bytes32] = {node.hash for node in previous_internal_nodes}
             else:
                 known_hashes = set()
             internal_nodes: List[InternalNode] = await self.get_internal_nodes(
@@ -1103,8 +1088,7 @@ class DataStore:
         if row is None:
             raise Exception(f"Node not found for requested hash: {node_hash.hex()}")
 
-        node = row_to_node(row=row)
-        return node
+        return row_to_node(row=row)
 
     async def get_tree_as_program(self, tree_id: bytes32) -> Program:
         async with self.db_wrapper.reader() as reader:
@@ -1161,11 +1145,7 @@ class DataStore:
 
         proof_of_inclusion = ProofOfInclusion(node_hash=node_hash, layers=layers)
 
-        if len(ancestors) > 0:
-            expected_root = ancestors[-1].hash
-        else:
-            expected_root = node_hash
-
+        expected_root = ancestors[-1].hash if len(ancestors) > 0 else node_hash
         if expected_root != proof_of_inclusion.root_hash:
             raise Exception(
                 f"Incorrect root, expected: {expected_root.hex()}"
@@ -1287,7 +1267,7 @@ class DataStore:
             )
             old_urls = set()
             if old_subscription is not None:
-                old_urls = set(server_info.url for server_info in old_subscription.servers_info)
+                old_urls = {server_info.url for server_info in old_subscription.servers_info}
             new_servers = [server_info for server_info in subscription.servers_info if server_info.url not in old_urls]
             for server_info in new_servers:
                 await writer.execute(
@@ -1374,11 +1354,11 @@ class DataStore:
         subscription = next((subscription for subscription in subscriptions if subscription.tree_id == tree_id), None)
         if subscription is None:
             return []
-        servers_info = []
-        for server_info in subscription.servers_info:
-            if timestamp > server_info.ignore_till:
-                servers_info.append(server_info)
-        return servers_info
+        return [
+            server_info
+            for server_info in subscription.servers_info
+            if timestamp > server_info.ignore_till
+        ]
 
     async def get_subscriptions(self) -> List[Subscription]:
         subscriptions: List[Subscription] = []
@@ -1396,19 +1376,22 @@ class DataStore:
                     (subscription for subscription in subscriptions if subscription.tree_id == tree_id), None
                 )
                 if subscription is None:
-                    if url is not None and num_consecutive_failures is not None and ignore_till is not None:
+                    if (
+                        url is None
+                        or num_consecutive_failures is None
+                        or ignore_till is None
+                    ):
+                        subscriptions.append(Subscription(tree_id, []))
+                    else:
                         subscriptions.append(
                             Subscription(tree_id, [ServerInfo(url, num_consecutive_failures, ignore_till)])
                         )
-                    else:
-                        subscriptions.append(Subscription(tree_id, []))
-                else:
-                    if url is not None and num_consecutive_failures is not None and ignore_till is not None:
-                        new_servers_info = subscription.servers_info
-                        new_servers_info.append(ServerInfo(url, num_consecutive_failures, ignore_till))
-                        new_subscription = replace(subscription, servers_info=new_servers_info)
-                        subscriptions.remove(subscription)
-                        subscriptions.append(new_subscription)
+                elif url is not None and num_consecutive_failures is not None and ignore_till is not None:
+                    new_servers_info = subscription.servers_info
+                    new_servers_info.append(ServerInfo(url, num_consecutive_failures, ignore_till))
+                    new_subscription = replace(subscription, servers_info=new_servers_info)
+                    subscriptions.remove(subscription)
+                    subscriptions.append(new_subscription)
 
         return subscriptions
 
@@ -1421,18 +1404,18 @@ class DataStore:
         async with self.db_wrapper.reader():
             old_pairs = set(await self.get_keys_values(tree_id, hash_1))
             new_pairs = set(await self.get_keys_values(tree_id, hash_2))
-            if len(old_pairs) == 0 and hash_1 != bytes32([0] * 32):
+            if not old_pairs and hash_1 != bytes32([0] * 32):
                 return set()
-            if len(new_pairs) == 0 and hash_2 != bytes32([0] * 32):
+            if not new_pairs and hash_2 != bytes32([0] * 32):
                 return set()
-            insertions = set(
+            insertions = {
                 DiffData(type=OperationType.INSERT, key=node.key, value=node.value)
                 for node in new_pairs
                 if node not in old_pairs
-            )
-            deletions = set(
+            }
+            deletions = {
                 DiffData(type=OperationType.DELETE, key=node.key, value=node.value)
                 for node in old_pairs
                 if node not in new_pairs
-            )
+            }
             return set.union(insertions, deletions)

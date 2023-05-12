@@ -53,10 +53,7 @@ def db_upgrade_func(
     if free < in_db_size:
         no_free: bool = free < in_db_size * 0.6
         strength: str
-        if no_free:
-            strength = "probably not enough"
-        else:
-            strength = "very little"
+        strength = "probably not enough" if no_free else "very little"
         print(f"there is {strength} free space on the volume where the output database will be written:")
         print(f"   {out_db_path}")
         print(

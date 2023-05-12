@@ -26,10 +26,9 @@ def main() -> int:
         print()
         directory_path = pathlib.Path(directory_string)
 
-        extras = ["upnp"]
         package_path_string = os.fspath(pathlib.Path(__file__).parent.parent)
 
-        if len(extras) > 0:
+        if extras := ["upnp"]:
             package_and_extras = f"{package_path_string}[{','.join(extras)}]"
         else:
             package_and_extras = package_path_string
@@ -72,7 +71,7 @@ def main() -> int:
 
             failed_artifacts.append(artifact)
 
-        if len(failed_artifacts) > 0:
+        if failed_artifacts:
             print("The following unacceptable artifacts were downloaded by pip:")
             for artifact in failed_artifacts:
                 print(f"    {artifact.name}")

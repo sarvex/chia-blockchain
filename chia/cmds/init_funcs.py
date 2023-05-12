@@ -49,16 +49,13 @@ def dict_add_new_default(updated: Dict, default: Dict, do_not_migrate_keys: Dict
         ignore = False
         if k in do_not_migrate_keys:
             do_not_data = do_not_migrate_keys[k]
-            if isinstance(do_not_data, dict):
-                ignore = False
-            else:
-                ignore = True
-        if isinstance(v, dict) and k in updated and ignore is False:
+            ignore = not isinstance(do_not_data, dict)
+        if isinstance(v, dict) and k in updated and not ignore:
             # If there is an intermediate key with empty string value, do not migrate all descendants
             if do_not_migrate_keys.get(k, None) == "":
                 do_not_migrate_keys[k] = v
             dict_add_new_default(updated[k], default[k], do_not_migrate_keys.get(k, {}))
-        elif k not in updated or ignore is True:
+        elif k not in updated or ignore:
             updated[k] = v
 
 
@@ -79,13 +76,13 @@ def check_keys(new_root: Path, keychain: Optional[Keychain] = None) -> None:
         selected = config["selected_network"]
         prefix = config["network_overrides"]["config"][selected]["address_prefix"]
 
-        intermediates = {}
-        for sk, _ in all_sks:
-            intermediates[bytes(sk)] = {
+        intermediates = {
+            bytes(sk): {
                 "observer": master_sk_to_wallet_sk_unhardened_intermediate(sk),
                 "non-observer": master_sk_to_wallet_sk_intermediate(sk),
             }
-
+            for sk, _ in all_sks
+        }
         for i in range(number_of_ph_to_search):
             if stop_searching_for_farmer and stop_searching_for_pool and i > 0:
                 break
@@ -93,13 +90,23 @@ def check_keys(new_root: Path, keychain: Optional[Keychain] = None) -> None:
                 intermediate_n = intermediates[bytes(sk)]["non-observer"]
                 intermediate_o = intermediates[bytes(sk)]["observer"]
 
-                all_targets.append(
-                    encode_puzzle_hash(
-                        create_puzzlehash_for_pk(_derive_path_unhardened(intermediate_o, [i]).get_g1()), prefix
+                all_targets.extend(
+                    (
+                        encode_puzzle_hash(
+                            create_puzzlehash_for_pk(
+                                _derive_path_unhardened(
+                                    intermediate_o, [i]
+                                ).get_g1()
+                            ),
+                            prefix,
+                        ),
+                        encode_puzzle_hash(
+                            create_puzzlehash_for_pk(
+                                _derive_path(intermediate_n, [i]).get_g1()
+                            ),
+                            prefix,
+                        ),
                     )
-                )
-                all_targets.append(
-                    encode_puzzle_hash(create_puzzlehash_for_pk(_derive_path(intermediate_n, [i]).get_g1()), prefix)
                 )
                 if all_targets[-1] == config["farmer"].get("xch_target_address") or all_targets[-2] == config[
                     "farmer"
@@ -145,7 +152,7 @@ def check_keys(new_root: Path, keychain: Optional[Keychain] = None) -> None:
             )
 
         # Set the pool pks in the farmer
-        pool_pubkeys_hex = set(bytes(pk).hex() for pk in pool_child_pubkeys)
+        pool_pubkeys_hex = {bytes(pk).hex() for pk in pool_child_pubkeys}
         if "pool_public_keys" in config["farmer"]:
             for pk_hex in config["farmer"]["pool_public_keys"]:
                 # Add original ones in config
@@ -223,37 +230,36 @@ def init(
     testnet: bool = False,
     v1_db: bool = False,
 ):
-    if create_certs is not None:
-        if root_path.exists():
-            if os.path.isdir(create_certs):
-                ca_dir: Path = root_path / "config/ssl/ca"
-                if ca_dir.exists():
-                    print(f"Deleting your OLD CA in {ca_dir}")
-                    shutil.rmtree(ca_dir)
-                print(f"Copying your CA from {create_certs} to {ca_dir}")
-                copy_cert_files(create_certs, ca_dir)
-                create_all_ssl(root_path)
-            else:
-                print(f"** Directory {create_certs} does not exist **")
-        else:
-            print(f"** {root_path} does not exist. Executing core init **")
-            # sanity check here to prevent infinite recursion
-            if (
-                chia_init(
-                    root_path,
-                    fix_ssl_permissions=fix_ssl_permissions,
-                    testnet=testnet,
-                    v1_db=v1_db,
-                )
-                == 0
-                and root_path.exists()
-            ):
-                return init(create_certs, root_path, fix_ssl_permissions)
-
-            print(f"** {root_path} was not created. Exiting **")
-            return -1
-    else:
+    if create_certs is None:
         return chia_init(root_path, fix_ssl_permissions=fix_ssl_permissions, testnet=testnet, v1_db=v1_db)
+    if root_path.exists():
+        if os.path.isdir(create_certs):
+            ca_dir: Path = root_path / "config/ssl/ca"
+            if ca_dir.exists():
+                print(f"Deleting your OLD CA in {ca_dir}")
+                shutil.rmtree(ca_dir)
+            print(f"Copying your CA from {create_certs} to {ca_dir}")
+            copy_cert_files(create_certs, ca_dir)
+            create_all_ssl(root_path)
+        else:
+            print(f"** Directory {create_certs} does not exist **")
+    else:
+        print(f"** {root_path} does not exist. Executing core init **")
+        # sanity check here to prevent infinite recursion
+        if (
+            chia_init(
+                root_path,
+                fix_ssl_permissions=fix_ssl_permissions,
+                testnet=testnet,
+                v1_db=v1_db,
+            )
+            == 0
+            and root_path.exists()
+        ):
+            return init(create_certs, root_path, fix_ssl_permissions)
+
+        print(f"** {root_path} was not created. Exiting **")
+        return -1
 
 
 def chia_version_number() -> Tuple[str, str, str, str]:
@@ -274,31 +280,30 @@ def chia_version_number() -> Tuple[str, str, str, str]:
     minor_release_number = scm_minor_version
     dev_release_number = ""
 
-    # If this is a beta dev release - get which beta it is
     if "0b" in scm_minor_version:
         original_minor_ver_list = scm_minor_version.split("0b")
         major_release_number = str(1 - int(scm_major_version))  # decrement the major release for beta
         minor_release_number = scm_major_version
         patch_release_number = original_minor_ver_list[1]
         if smc_patch_version and "dev" in smc_patch_version:
-            dev_release_number = "." + smc_patch_version
-    elif "0rc" in version[1]:
+            dev_release_number = f".{smc_patch_version}"
+    elif "0rc" in scm_minor_version:
         original_minor_ver_list = scm_minor_version.split("0rc")
         major_release_number = str(1 - int(scm_major_version))  # decrement the major release for release candidate
         minor_release_number = str(int(scm_major_version) + 1)  # RC is 0.2.1 for RC 1
         patch_release_number = original_minor_ver_list[1]
         if smc_patch_version and "dev" in smc_patch_version:
-            dev_release_number = "." + smc_patch_version
+            dev_release_number = f".{smc_patch_version}"
     else:
         major_release_number = scm_major_version
         minor_release_number = scm_minor_version
         patch_release_number = smc_patch_version
         dev_release_number = ""
 
-    install_release_number = major_release_number + "." + minor_release_number
+    install_release_number = f"{major_release_number}.{minor_release_number}"
     if len(patch_release_number) > 0:
-        install_release_number += "." + patch_release_number
-    if len(dev_release_number) > 0:
+        install_release_number += f".{patch_release_number}"
+    if dev_release_number != "":
         install_release_number += dev_release_number
 
     return major_release_number, minor_release_number, patch_release_number, dev_release_number

@@ -56,14 +56,16 @@ class SmartFeeEstimator:
         self.log.error(self.fee_tracker.buckets)
         short_time_seconds, med_time_seconds, long_time_seconds = get_estimate_time_intervals()
 
-        if ignore_mempool is False and (self.fee_tracker.latest_seen_height == 0):
+        if not ignore_mempool and self.fee_tracker.latest_seen_height == 0:
             return FeeEstimateGroup(error="Not enough data", estimates=[])
 
         tracking_length = self.fee_tracker.latest_seen_height - self.fee_tracker.first_recorded_height
         if tracking_length < 20:
             return FeeEstimateGroup(error="Not enough data", estimates=[])
 
-        if ignore_mempool is False and info.current_mempool_cost < int(info.mempool_info.max_block_clvm_cost * 0.8):
+        if not ignore_mempool and info.current_mempool_cost < int(
+            info.mempool_info.max_block_clvm_cost * 0.8
+        ):
             return FeeEstimateGroup(
                 error=None,
                 estimates=[

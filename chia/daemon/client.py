@@ -31,8 +31,7 @@ class DaemonProxy:
         self.max_message_size = max_message_size
 
     def format_request(self, command: str, data: Dict[str, Any]) -> WsRpcMessage:
-        request = create_payload_dict(command, data, "client", "daemon")
-        return request
+        return create_payload_dict(command, data, "client", "daemon")
 
     async def start(self) -> None:
         try:
@@ -63,15 +62,14 @@ class DaemonProxy:
             raise TypeError("Websocket is None in listener!")
         while True:
             message = await self.websocket.receive()
-            if message.type == aiohttp.WSMsgType.TEXT:
-                decoded: WsRpcMessage = json.loads(message.data)
-                request_id = decoded["request_id"]
-
-                if request_id in self._request_dict:
-                    self.response_dict[request_id] = decoded
-                    self._request_dict[request_id].set()
-            else:
+            if message.type != aiohttp.WSMsgType.TEXT:
                 return None
+            decoded: WsRpcMessage = json.loads(message.data)
+            request_id = decoded["request_id"]
+
+            if request_id in self._request_dict:
+                self.response_dict[request_id] = decoded
+                self._request_dict[request_id].set()
 
     async def _get(self, request: WsRpcMessage) -> WsRpcMessage:
         request_id = request["request_id"]
@@ -93,20 +91,17 @@ class DaemonProxy:
     async def get_version(self) -> WsRpcMessage:
         data: Dict[str, Any] = {}
         request = self.format_request("get_version", data)
-        response = await self._get(request)
-        return response
+        return await self._get(request)
 
     async def start_service(self, service_name: str) -> WsRpcMessage:
         data = {"service": service_name}
         request = self.format_request("start_service", data)
-        response = await self._get(request)
-        return response
+        return await self._get(request)
 
     async def stop_service(self, service_name: str, delay_before_kill: int = 15) -> WsRpcMessage:
         data = {"service": service_name}
         request = self.format_request("stop_service", data)
-        response = await self._get(request)
-        return response
+        return await self._get(request)
 
     async def is_running(self, service_name: str) -> bool:
         data = {"service": service_name}
@@ -127,13 +122,11 @@ class DaemonProxy:
     async def unlock_keyring(self, passphrase: str) -> WsRpcMessage:
         data = {"key": passphrase}
         request = self.format_request("unlock_keyring", data)
-        response = await self._get(request)
-        return response
+        return await self._get(request)
 
     async def ping(self) -> WsRpcMessage:
         request = self.format_request("ping", {})
-        response = await self._get(request)
-        return response
+        return await self._get(request)
 
     async def close(self) -> None:
         if self.websocket is not None:

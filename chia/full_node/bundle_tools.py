@@ -24,10 +24,7 @@ def _serialize_amount(val: int) -> bytes:
 
     if size == 0:
         return b"\x80"
-    if size == 1 and atom[0] <= 0x7F:
-        return atom
-    size_blob = bytes([0x80 | size])
-    return size_blob + atom
+    return atom if size == 1 and atom[0] <= 0x7F else bytes([0x80 | size]) + atom
 
 
 def spend_bundle_to_serialized_coin_spend_entry_list(bundle: SpendBundle) -> bytes:
@@ -68,11 +65,7 @@ STANDARD_TRANSACTION_PUZZLE_PATTERN = re.compile(STANDARD_TRANSACTION_PUZZLE_PRE
 def match_standard_transaction_at_any_index(generator_body: bytes) -> Optional[Tuple[int, int]]:
     """Return (start, end) of match, or None if pattern could not be found"""
 
-    # We intentionally match the entire puzzle, not just the prefix that we will use,
-    # in case we later want to convert the template generator into a tree of CLVM
-    # Objects before operating on it
-    m = STANDARD_TRANSACTION_PUZZLE_PATTERN.search(generator_body.hex())
-    if m:
+    if m := STANDARD_TRANSACTION_PUZZLE_PATTERN.search(generator_body.hex()):
         assert m.start() % 2 == 0 and m.end() % 2 == 0
         start = m.start() // 2
         end = (m.end() - 98 - len("ff018080")) // 2
@@ -100,7 +93,7 @@ def compress_coin_spend(coin_spend: CoinSpend) -> List[List[Union[bytes, None, i
 
 
 def puzzle_suitable_for_compression(puzzle: SerializedProgram) -> bool:
-    return True if match_standard_transaction_exactly_and_return_pubkey(puzzle) else False
+    return bool(match_standard_transaction_exactly_and_return_pubkey(puzzle))
 
 
 def bundle_suitable_for_compression(bundle: SpendBundle) -> bool:
@@ -108,9 +101,9 @@ def bundle_suitable_for_compression(bundle: SpendBundle) -> bool:
 
 
 def compressed_coin_spend_entry_list(bundle: SpendBundle) -> List[List[List[Union[bytes, None, int, Program]]]]:
-    compressed_cse_list: List[List[List[Union[bytes, None, int, Program]]]] = []
-    for coin_spend in bundle.coin_spends:
-        compressed_cse_list.append(compress_coin_spend(coin_spend))
+    compressed_cse_list: List[List[List[Union[bytes, None, int, Program]]]] = [
+        compress_coin_spend(coin_spend) for coin_spend in bundle.coin_spends
+    ]
     return compressed_cse_list
 
 

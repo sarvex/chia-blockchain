@@ -32,15 +32,10 @@ def validate_block_merkle_roots(
     # Addition Merkle set contains puzzlehash and hash of all coins with that puzzlehash
     additions_merkle_items: List[bytes32] = []
     for puzzle, coin_ids in puzzlehash_coins_map.items():
-        additions_merkle_items.append(puzzle)
-        additions_merkle_items.append(hash_coin_ids(coin_ids))
-
+        additions_merkle_items.extend((puzzle, hash_coin_ids(coin_ids)))
     additions_root = bytes32(compute_merkle_set_root(additions_merkle_items))
     removals_root = bytes32(compute_merkle_set_root(tx_removals))
 
     if block_additions_root != additions_root:
         return Err.BAD_ADDITION_ROOT
-    if block_removals_root != removals_root:
-        return Err.BAD_REMOVAL_ROOT
-
-    return None
+    return Err.BAD_REMOVAL_ROOT if block_removals_root != removals_root else None

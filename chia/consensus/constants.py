@@ -78,9 +78,5 @@ class ConsensusConstants:
                 if k not in ["NETWORK_TYPE"]:
                     log.warning(f'invalid key in network configuration (config.yaml) "{k}". Ignoring')
                 continue
-            if isinstance(v, str):
-                filtered_changes[k] = hexstr_to_bytes(v)
-            else:
-                filtered_changes[k] = v
-
+            filtered_changes[k] = hexstr_to_bytes(v) if isinstance(v, str) else v
         return dataclasses.replace(self, **filtered_changes)

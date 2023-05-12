@@ -56,7 +56,7 @@ def obtain_current_passphrase(prompt: str = DEFAULT_PASSPHRASE_PROMPT, use_passp
                 KeyringWrapper.get_shared_instance().set_cached_master_passphrase(None)
 
     # Prompt interactively with up to MAX_RETRIES attempts
-    for i in range(MAX_RETRIES):
+    for _ in range(MAX_RETRIES):
         colorama.init()
 
         passphrase = prompt_for_passphrase(prompt)
@@ -83,14 +83,12 @@ def verify_passphrase_meets_requirements(
         return True, None
     elif not match:
         return False, "Passphrases do not match"
-    elif not meets_len_requirement:
-        return False, f"Minimum passphrase length is {min_length}"
     else:
-        raise Exception("Unexpected passphrase verification case")
+        return False, f"Minimum passphrase length is {min_length}"
 
 
 def prompt_for_passphrase(prompt: str) -> str:
-    if sys.platform == "win32" or sys.platform == "cygwin":
+    if sys.platform in ["win32", "cygwin"]:
         print(prompt, end="")
         prompt = ""
     return getpass(prompt)
@@ -107,7 +105,7 @@ def prompt_to_save_passphrase() -> bool:
             if sys.platform == "darwin":
                 location = "macOS Keychain"
                 warning = SAVE_MASTER_PASSPHRASE_WARNING
-            elif sys.platform == "win32" or sys.platform == "cygwin":
+            elif sys.platform in ["win32", "cygwin"]:
                 location = "Windows Credential Manager"
                 warning = SAVE_MASTER_PASSPHRASE_WARNING
 
@@ -340,7 +338,7 @@ async def async_update_daemon_passphrase_cache_if_running(root_path: Path, confi
                     raise Exception("daemon didn't respond")
 
                 success: bool = response.get("data", {}).get("success", False)
-                if success is False:
+                if not success:
                     error = response.get("data", {}).get("error", "unknown error")
                     raise Exception(error)
     except Exception as e:

@@ -23,7 +23,6 @@ async def print_blockchain_state(node_client: FullNodeRpcClient, config: Dict[st
     sub_slot_iters = blockchain_state["sub_slot_iters"]
     synced = blockchain_state["sync"]["synced"]
     sync_mode = blockchain_state["sync"]["sync_mode"]
-    num_blocks: int = 10
     network_name = config["selected_network"]
     genesis_challenge = config["farmer"]["network_overrides"]["constants"][network_name]["GENESIS_CHALLENGE"]
     full_node_port = config["full_node"]["port"]
@@ -58,10 +57,7 @@ async def print_blockchain_state(node_client: FullNodeRpcClient, config: Dict[st
             curr = await node_client.get_block_record(peak_hash)
             while curr is not None and not curr.is_transaction_block:
                 curr = await node_client.get_block_record(curr.prev_hash)
-            if curr is not None:
-                peak_time = curr.timestamp
-            else:
-                peak_time = uint64(0)
+            peak_time = curr.timestamp if curr is not None else uint64(0)
         peak_time_struct = time.struct_time(time.localtime(peak_time))
 
         print(
@@ -78,6 +74,7 @@ async def print_blockchain_state(node_client: FullNodeRpcClient, config: Dict[st
 
         added_blocks: List[BlockRecord] = []
         curr = await node_client.get_block_record(peak.header_hash)
+        num_blocks: int = 10
         while curr is not None and len(added_blocks) < num_blocks and curr.height > 0:
             added_blocks.append(curr)
             curr = await node_client.get_block_record(curr.prev_hash)
@@ -106,10 +103,7 @@ async def print_block_from_hash(
     if block is not None:
         assert full_block is not None
         prev_b = await node_client.get_block_record(block.prev_hash)
-        if prev_b is not None:
-            difficulty = block.weight - prev_b.weight
-        else:
-            difficulty = block.weight
+        difficulty = block.weight if prev_b is None else block.weight - prev_b.weight
         if block.is_transaction_block:
             assert full_block.transactions_info is not None
             block_time = time.struct_time(
@@ -200,9 +194,11 @@ async def show_async(
         node_client, config, _ = node_config_fp
         if node_client is not None:
             # Check State
-            if print_state:
-                if await print_blockchain_state(node_client, config) is True:
-                    return None  # if no blockchain is found
+            if (
+                print_state
+                and await print_blockchain_state(node_client, config) is True
+            ):
+                return None  # if no blockchain is found
             if print_fee_info_flag:
                 await print_fee_info(node_client)
             # Get Block Information

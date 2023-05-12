@@ -260,9 +260,10 @@ class KeychainServer:
             return {"success": False, "error": KEYCHAIN_ERR_LOCKED}
 
         private_keys = self.get_keychain_for_request(request).get_all_private_keys()
-        for sk, entropy in private_keys:
-            all_keys.append({"pk": bytes(sk.get_g1()).hex(), "entropy": entropy.hex()})
-
+        all_keys.extend(
+            {"pk": bytes(sk.get_g1()).hex(), "entropy": entropy.hex()}
+            for sk, entropy in private_keys
+        )
         return {"success": True, "private_keys": all_keys}
 
     async def get_first_private_key(self, request: Dict[str, Any]) -> Dict[str, Any]:

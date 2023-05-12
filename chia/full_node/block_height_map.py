@@ -92,7 +92,7 @@ class BlockHeightMap:
 
         try:
             async with aiofiles.open(self.__ses_filename, "rb") as f:
-                self.__sub_epoch_summaries = {k: v for (k, v) in SesCache.from_bytes(await f.read()).content}
+                self.__sub_epoch_summaries = dict(SesCache.from_bytes(await f.read()).content)
         except Exception:
             # it's OK if this file doesn't exist, we can rebuild it
             pass
@@ -146,7 +146,7 @@ class BlockHeightMap:
         assert (len(self.__height_to_hash) % 32) == 0
         map_buf = self.__height_to_hash.copy()
 
-        ses_buf = bytes(SesCache([(k, v) for (k, v) in self.__sub_epoch_summaries.items()]))
+        ses_buf = bytes(SesCache(list(self.__sub_epoch_summaries.items())))
 
         self.__dirty = 0
 
@@ -179,11 +179,10 @@ class BlockHeightMap:
                     # maps block-hash -> (height, prev-hash, sub-epoch-summary)
                     ordered: Dict[bytes32, Tuple[uint32, bytes32, Optional[bytes]]] = {}
 
-                    if self.db.db_version == 2:
-                        for r in await cursor.fetchall():
+                    for r in await cursor.fetchall():
+                        if self.db.db_version == 2:
                             ordered[r[0]] = (r[2], r[1], r[3])
-                    else:
-                        for r in await cursor.fetchall():
+                        else:
                             ordered[bytes32.fromhex(r[0])] = (r[2], bytes32.fromhex(r[1]), r[3])
 
             while height > window_end:
@@ -225,12 +224,11 @@ class BlockHeightMap:
         return height * 32 < len(self.__height_to_hash)
 
     def rollback(self, fork_height: int) -> None:
-        # fork height may be -1, in which case all blocks are different and we
-        # should clear all sub epoch summaries
-        heights_to_delete = []
-        for ses_included_height in self.__sub_epoch_summaries.keys():
-            if ses_included_height > fork_height:
-                heights_to_delete.append(ses_included_height)
+        heights_to_delete = [
+            ses_included_height
+            for ses_included_height in self.__sub_epoch_summaries.keys()
+            if ses_included_height > fork_height
+        ]
         for height in heights_to_delete:
             del self.__sub_epoch_summaries[height]
         del self.__height_to_hash[(fork_height + 1) * 32 :]

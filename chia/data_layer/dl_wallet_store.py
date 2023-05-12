@@ -33,7 +33,7 @@ def _row_to_mirror(row: Row) -> Mirror:
     urls: List[bytes] = []
     byte_list: bytes = row[3]
     while byte_list != b"":
-        length = uint16.from_bytes(byte_list[0:2])
+        length = uint16.from_bytes(byte_list[:2])
         url = byte_list[2 : length + 2]
         byte_list = byte_list[length + 2 :]
         urls.append(url)
@@ -134,10 +134,11 @@ class DataLayerStore:
         Returns stored singletons with a specific launcher ID.
         """
         query_params: List[Union[bytes32, uint32]] = [launcher_id]
-        for optional_param in (min_generation, max_generation, num_results):
-            if optional_param is not None:
-                query_params.append(optional_param)
-
+        query_params.extend(
+            optional_param
+            for optional_param in (min_generation, max_generation, num_results)
+            if optional_param is not None
+        )
         async with self.db_wrapper.reader_no_transaction() as conn:
             cursor = await conn.execute(
                 "SELECT * from singleton_records WHERE launcher_id=? "
@@ -149,12 +150,7 @@ class DataLayerStore:
             )
             rows = await cursor.fetchall()
             await cursor.close()
-        records = []
-
-        for row in rows:
-            records.append(_row_to_singleton_record(row))
-
-        return records
+        return [_row_to_singleton_record(row) for row in rows]
 
     async def get_singleton_record(self, coin_id: bytes32) -> Optional[SingletonRecord]:
         """
@@ -167,9 +163,7 @@ class DataLayerStore:
             cursor = await conn.execute("SELECT * from singleton_records WHERE coin_id=?", (coin_id,))
             row = await cursor.fetchone()
             await cursor.close()
-        if row is not None:
-            return _row_to_singleton_record(row)
-        return None
+        return _row_to_singleton_record(row) if row is not None else None
 
     async def get_latest_singleton(
         self, launcher_id: bytes32, only_confirmed: bool = False
@@ -194,9 +188,7 @@ class DataLayerStore:
                 )
             row = await cursor.fetchone()
             await cursor.close()
-        if row is not None:
-            return _row_to_singleton_record(row)
-        return None
+        return _row_to_singleton_record(row) if row is not None else None
 
     async def get_unconfirmed_singletons(self, launcher_id: bytes32) -> List[SingletonRecord]:
         """
@@ -208,9 +200,7 @@ class DataLayerStore:
             )
             rows = await cursor.fetchall()
             await cursor.close()
-        records = [_row_to_singleton_record(row) for row in rows]
-
-        return records
+        return [_row_to_singleton_record(row) for row in rows]
 
     async def get_singletons_by_root(self, launcher_id: bytes32, root: bytes32) -> List[SingletonRecord]:
         async with self.db_wrapper.reader_no_transaction() as conn:
@@ -220,12 +210,7 @@ class DataLayerStore:
             )
             rows = await cursor.fetchall()
             await cursor.close()
-        records = []
-
-        for row in rows:
-            records.append(_row_to_singleton_record(row))
-
-        return records
+        return [_row_to_singleton_record(row) for row in rows]
 
     async def set_confirmed(self, coin_id: bytes32, height: uint32, timestamp: uint64) -> None:
         """
@@ -268,7 +253,11 @@ class DataLayerStore:
             row = await cursor.fetchone()
             await cursor.close()
         if row is not None:
-            return Coin(bytes32(row[1][0:32]), bytes32(row[1][32:64]), uint64(int.from_bytes(row[1][64:72], "big")))
+            return Coin(
+                bytes32(row[1][:32]),
+                bytes32(row[1][32:64]),
+                uint64(int.from_bytes(row[1][64:72], "big")),
+            )
         return None
 
     async def get_all_launchers(self) -> List[bytes32]:
@@ -288,11 +277,7 @@ class DataLayerStore:
             cursor = await conn.execute("SELECT COUNT(*) from singleton_records WHERE launcher_id=?", (launcher_id,))
             row = await cursor.fetchone()
             await cursor.close()
-        if row is not None:
-            count: int = row[0]
-            return count > 0
-        else:
-            return False
+        return row[0] > 0 if row is not None else False
 
     async def delete_launcher(self, launcher_id: bytes32) -> None:
         async with self.db_wrapper.writer_maybe_transaction() as conn:
@@ -323,11 +308,7 @@ class DataLayerStore:
             )
             rows = await cursor.fetchall()
             await cursor.close()
-        mirrors: List[Mirror] = []
-
-        for row in rows:
-            mirrors.append(_row_to_mirror(row))
-
+        mirrors: List[Mirror] = [_row_to_mirror(row) for row in rows]
         return mirrors
 
     async def get_mirror(self, coin_id: bytes32) -> Mirror:

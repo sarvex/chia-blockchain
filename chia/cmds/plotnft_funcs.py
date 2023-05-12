@@ -61,11 +61,7 @@ async def create(args: dict, wallet_client: WalletRpcClient, fingerprint: int) -
     fee_mojos = uint64(int(fee * units["chia"]))
     target_puzzle_hash: Optional[bytes32]
     # Could use initial_pool_state_from_dict to simplify
-    if state == "SELF_POOLING":
-        pool_url: Optional[str] = None
-        relative_lock_height = uint32(0)
-        target_puzzle_hash = None  # wallet will fill this in
-    elif state == "FARMING_TO_POOL":
+    if state == "FARMING_TO_POOL":
         config = load_config(DEFAULT_ROOT_PATH, "config.yaml")
         enforce_https = config["full_node"]["selected_network"] == "mainnet"
         pool_url = str(args["pool_url"])
@@ -75,17 +71,17 @@ async def create(args: dict, wallet_client: WalletRpcClient, fingerprint: int) -
         json_dict = await create_pool_args(pool_url)
         relative_lock_height = json_dict["relative_lock_height"]
         target_puzzle_hash = bytes32.from_hexstr(json_dict["target_puzzle_hash"])
+    elif state == "SELF_POOLING":
+        pool_url: Optional[str] = None
+        relative_lock_height = uint32(0)
+        target_puzzle_hash = None  # wallet will fill this in
     else:
         raise ValueError("Plot NFT must be created in SELF_POOLING or FARMING_TO_POOL state.")
 
     pool_msg = f" and join pool: {pool_url}" if pool_url else ""
     print(f"Will create a plot NFT{pool_msg}.")
-    if prompt:
-        user_input: str = input("Confirm [n]/y: ")
-    else:
-        user_input = "yes"
-
-    if user_input.lower() == "y" or user_input.lower() == "yes":
+    user_input = input("Confirm [n]/y: ") if prompt else "yes"
+    if user_input.lower() in ["y", "yes"]:
         try:
             tx_record: TransactionRecord = await wallet_client.create_new_pool_wallet(
                 target_puzzle_hash,
@@ -238,12 +234,8 @@ async def submit_tx_with_confirmation(
     message: str, prompt: bool, func: Callable, wallet_client: WalletRpcClient, fingerprint: int, wallet_id: int
 ):
     print(message)
-    if prompt:
-        user_input: str = input("Confirm [n]/y: ")
-    else:
-        user_input = "yes"
-
-    if user_input.lower() == "y" or user_input.lower() == "yes":
+    user_input = input("Confirm [n]/y: ") if prompt else "yes"
+    if user_input.lower() in ["y", "yes"]:
         try:
             result: Dict = await func()
             tx_record: TransactionRecord = result["transaction"]

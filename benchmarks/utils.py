@@ -157,7 +157,7 @@ def rand_full_block() -> FullBlock:
         [farmer_coin, pool_coin],
     )
 
-    full_block = FullBlock(
+    return FullBlock(
         [],
         reward_chain_block,
         rand_vdf_proof(),
@@ -172,8 +172,6 @@ def rand_full_block() -> FullBlock:
         [],
     )
 
-    return full_block
-
 
 async def setup_db(name: Union[str, os.PathLike], db_version: int) -> DBWrapper2:
     db_filename = Path(name)
@@ -186,9 +184,8 @@ async def setup_db(name: Union[str, os.PathLike], db_version: int) -> DBWrapper2
     def sql_trace_callback(req: str):
         sql_log_path = "sql.log"
         timestamp = datetime.now().strftime("%H:%M:%S.%f")
-        log = open(sql_log_path, "a")
-        log.write(timestamp + " " + req + "\n")
-        log.close()
+        with open(sql_log_path, "a") as log:
+            log.write(f"{timestamp} {req}" + "\n")
 
     if "--sql-logging" in sys.argv:
         await connection.set_trace_callback(sql_trace_callback)

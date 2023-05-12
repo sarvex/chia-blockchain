@@ -80,7 +80,7 @@ async def async_list(args: Dict[str, Any], wallet_client: WalletRpcClient, finge
 def print_coins(
     target_string: str, coins: List[Tuple[Coin, str]], mojo_per_unit: int, addr_prefix: str, paginate: bool
 ) -> None:
-    if len(coins) == 0:
+    if not coins:
         print("\tNo Coins.")
         return
     num_per_screen = 5 if paginate else len(coins)
@@ -99,10 +99,10 @@ def print_coins(
         print("Press q to quit, or c to continue")
         while True:
             entered_key = sys.stdin.read(1)
-            if entered_key == "q":
-                return None
-            elif entered_key == "c":
+            if entered_key == "c":
                 break
+            elif entered_key == "q":
+                return None
 
 
 async def async_combine(args: Dict[str, Any], wallet_client: WalletRpcClient, fingerprint: int) -> None:
@@ -146,7 +146,7 @@ async def async_combine(args: Dict[str, Any], wallet_client: WalletRpcClient, fi
             min_coin_amount=final_min_coin_amount,
             excluded_amounts=final_excluded_amounts,
         )
-        if len(target_coin_ids) > 0:
+        if target_coin_ids:
             conf_coins = [cr for cr in conf_coins if cr.name in target_coin_ids]
         if len(conf_coins) == 0:
             print("No coins to combine.")
@@ -212,7 +212,7 @@ async def async_split(args: Dict[str, Any], wallet_client: WalletRpcClient, fing
         print("Try using a smaller fee or amount.")
         return
     additions: List[Dict[str, Union[uint64, bytes32]]] = []
-    for i in range(number_of_coins):  # for readability.
+    for _ in range(number_of_coins):
         # we always use new addresses
         target_ph: bytes32 = decode_puzzle_hash(await wallet_client.get_next_address(wallet_id, new_address=True))
         additions.append({"amount": final_amount_per_coin, "puzzle_hash": target_ph})

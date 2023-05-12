@@ -38,19 +38,12 @@ def final_eos_is_already_included(
 
     # We also check if curr is close to header_block, which means it's in the same sub slot
     seen_overflow_block = curr.overflow and (header_block.total_iters - curr.total_iters < sub_slot_iters // 2)
-    while not curr.first_in_sub_slot and not curr.height == 0:
+    while not curr.first_in_sub_slot and curr.height != 0:
         if curr.overflow and header_block.total_iters - curr.total_iters < sub_slot_iters // 2:
             seen_overflow_block = True
         curr = blocks.block_record(curr.prev_hash)
 
-    if curr.first_in_sub_slot and seen_overflow_block:
-        # We have seen another overflow block in this slot (same as header_block), therefore there are no
-        # missing sub slots
-        return True
-
-    # We have not seen any overflow blocks, therefore header_block will have to include the missing sub slot in
-    # the future
-    return False
+    return bool(curr.first_in_sub_slot and seen_overflow_block)
 
 
 def get_block_challenge(
@@ -64,41 +57,36 @@ def get_block_challenge(
     if len(header_block.finished_sub_slots) > 0:
         if overflow:
             # New sub-slot with overflow block
-            if skip_overflow_last_ss_validation:
-                # In this case, we are missing the final sub-slot bundle (it's not finished yet), however
-                # There is a whole empty slot before this block is infused
-                challenge: bytes32 = header_block.finished_sub_slots[-1].challenge_chain.get_hash()
-            else:
-                challenge = header_block.finished_sub_slots[
+            challenge = (
+                header_block.finished_sub_slots[-1].challenge_chain.get_hash()
+                if skip_overflow_last_ss_validation
+                else header_block.finished_sub_slots[
                     -1
                 ].challenge_chain.challenge_chain_end_of_slot_vdf.challenge
+            )
         else:
             # No overflow, new slot with a new challenge
             challenge = header_block.finished_sub_slots[-1].challenge_chain.get_hash()
+    elif genesis_block:
+        challenge = constants.GENESIS_CHALLENGE
     else:
-        if genesis_block:
-            challenge = constants.GENESIS_CHALLENGE
+        if overflow and skip_overflow_last_ss_validation or not overflow:
+            # Overflow infusion without the new slot, so get the last challenge
+            challenges_to_look_for = 1
         else:
-            if overflow:
-                if skip_overflow_last_ss_validation:
-                    # Overflow infusion without the new slot, so get the last challenge
-                    challenges_to_look_for = 1
-                else:
-                    # Overflow infusion, so get the second to last challenge. skip_overflow_last_ss_validation is False,
-                    # Which means no sub slots are omitted
-                    challenges_to_look_for = 2
-            else:
-                challenges_to_look_for = 1
-            reversed_challenge_hashes: List[bytes32] = []
-            curr: BlockRecord = blocks.block_record(header_block.prev_header_hash)
-            while len(reversed_challenge_hashes) < challenges_to_look_for:
-                if curr.first_in_sub_slot:
-                    assert curr.finished_challenge_slot_hashes is not None
-                    reversed_challenge_hashes += reversed(curr.finished_challenge_slot_hashes)
-                if curr.height == 0:
-                    assert curr.finished_challenge_slot_hashes is not None
-                    assert len(curr.finished_challenge_slot_hashes) > 0
-                    break
-                curr = blocks.block_record(curr.prev_hash)
-            challenge = reversed_challenge_hashes[challenges_to_look_for - 1]
+            # Overflow infusion, so get the second to last challenge. skip_overflow_last_ss_validation is False,
+            # Which means no sub slots are omitted
+            challenges_to_look_for = 2
+        reversed_challenge_hashes: List[bytes32] = []
+        curr: BlockRecord = blocks.block_record(header_block.prev_header_hash)
+        while len(reversed_challenge_hashes) < challenges_to_look_for:
+            if curr.first_in_sub_slot:
+                assert curr.finished_challenge_slot_hashes is not None
+                reversed_challenge_hashes += reversed(curr.finished_challenge_slot_hashes)
+            if curr.height == 0:
+                assert curr.finished_challenge_slot_hashes is not None
+                assert len(curr.finished_challenge_slot_hashes) > 0
+                break
+            curr = blocks.block_record(curr.prev_hash)
+        challenge = reversed_challenge_hashes[challenges_to_look_for - 1]
     return challenge

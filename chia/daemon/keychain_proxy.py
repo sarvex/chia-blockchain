@@ -53,10 +53,7 @@ class KeychainProxy(DaemonProxy):
     ):
         super().__init__(uri, ssl_context, heartbeat=heartbeat)
         self.log = log
-        if local_keychain:
-            self.keychain = local_keychain
-        else:
-            self.keychain = None  # type: ignore
+        self.keychain = local_keychain if local_keychain else None
         self.keychain_user = user
         self.keychain_service = service
         # these are used to track and close the keychain connection
@@ -150,8 +147,7 @@ class KeychainProxy(DaemonProxy):
         """
         Common error handling for RPC responses
         """
-        error = response["data"].get("error", None)
-        if error:
+        if error := response["data"].get("error", None):
             error_details = response["data"].get("error_details", {})
             if error == KEYCHAIN_ERR_LOCKED:
                 raise KeychainIsLocked()
@@ -272,8 +268,7 @@ class KeychainProxy(DaemonProxy):
         """
         key: Optional[PrivateKey] = None
         if self.use_local_keychain():
-            sk_ent = self.keychain.get_first_private_key()
-            if sk_ent:
+            if sk_ent := self.keychain.get_first_private_key():
                 key = sk_ent[0]
         else:
             response, success = await self.get_response_for_request("get_first_private_key", {})
@@ -313,16 +308,15 @@ class KeychainProxy(DaemonProxy):
             private_keys = self.keychain.get_all_private_keys()
             if len(private_keys) == 0:
                 raise KeychainIsEmpty()
+            if fingerprint is None:
+                key = private_keys[0][0]
             else:
-                if fingerprint is not None:
-                    for sk, _ in private_keys:
-                        if sk.get_g1().get_fingerprint() == fingerprint:
-                            key = sk
-                            break
-                    if key is None:
-                        raise KeychainKeyNotFound(fingerprint)
-                else:
-                    key = private_keys[0][0]
+                for sk, _ in private_keys:
+                    if sk.get_g1().get_fingerprint() == fingerprint:
+                        key = sk
+                        break
+                if key is None:
+                    raise KeychainKeyNotFound(fingerprint)
         else:
             response, success = await self.get_response_for_request(
                 "get_key_for_fingerprint", {"fingerprint": fingerprint}

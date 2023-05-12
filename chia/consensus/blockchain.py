@@ -128,8 +128,7 @@ class Blockchain(BlockchainInterface):
             self.pool = InlineExecutor()
         else:
             cpu_count = multiprocessing.cpu_count()
-            if cpu_count > 61:
-                cpu_count = 61  # Windows Server 2016 has an issue https://bugs.python.org/issue26903
+            cpu_count = min(cpu_count, 61)
             num_workers = max(cpu_count - reserved_cores, 1)
             self.pool = ProcessPoolExecutor(
                 max_workers=num_workers,
@@ -547,13 +546,12 @@ class Blockchain(BlockchainInterface):
             return None, Err.INVALID_PREV_BLOCK_HASH
 
         if block.transactions_info is not None:
-            if block.transactions_generator is not None:
-                if std_hash(bytes(block.transactions_generator)) != block.transactions_info.generator_root:
-                    return None, Err.INVALID_TRANSACTIONS_GENERATOR_HASH
-            else:
+            if block.transactions_generator is None:
                 if block.transactions_info.generator_root != bytes([0] * 32):
                     return None, Err.INVALID_TRANSACTIONS_GENERATOR_HASH
 
+            elif std_hash(bytes(block.transactions_generator)) != block.transactions_info.generator_root:
+                return None, Err.INVALID_TRANSACTIONS_GENERATOR_HASH
             if (
                 block.foliage_transaction_block is None
                 or block.foliage_transaction_block.transactions_info_hash != block.transactions_info.get_hash()
@@ -731,7 +729,7 @@ class Blockchain(BlockchainInterface):
 
             if height == 0:
                 break
-            height = height - 1
+            height -= 1
             blocks_to_remove = self.__heights_in_cache.get(uint32(height), None)
 
     def clean_block_records(self) -> None:
@@ -774,7 +772,7 @@ class Blockchain(BlockchainInterface):
         for block in blocks:
             if self.height_to_hash(block.height) != block.header_hash:
                 raise ValueError(f"Block at {block.header_hash} is no longer in the blockchain (it's in a fork)")
-            if tx_filter is False:
+            if not tx_filter:
                 header = get_block_header(block, [], [])
             else:
                 tx_additions: List[CoinRecord] = [
@@ -792,11 +790,9 @@ class Blockchain(BlockchainInterface):
         self, height: int, header_hash: bytes32, tx_filter: bool = True
     ) -> Optional[HeaderBlock]:
         header_dict: Dict[bytes32, HeaderBlock] = await self.get_header_blocks_in_range(height, height, tx_filter)
-        if len(header_dict) == 0:
+        if not header_dict:
             return None
-        if header_hash not in header_dict:
-            return None
-        return header_dict[header_hash]
+        return None if header_hash not in header_dict else header_dict[header_hash]
 
     async def get_block_records_at(self, heights: List[uint32], batch_size: int = 900) -> List[BlockRecord]:
         """
@@ -852,9 +848,7 @@ class Blockchain(BlockchainInterface):
         segments: Optional[List[SubEpochChallengeSegment]] = await self.block_store.get_sub_epoch_challenge_segments(
             ses_block_hash
         )
-        if segments is None:
-            return None
-        return segments
+        return None if segments is None else segments
 
     # Returns 'True' if the info is already in the set, otherwise returns 'False' and stores it.
     def seen_compact_proofs(self, vdf_info: VDFInfo, height: uint32) -> bool:
@@ -939,21 +933,21 @@ class Blockchain(BlockchainInterface):
                     assert ref_block is not None
                     if ref_block.transactions_generator is None:
                         raise ValueError(Err.GENERATOR_REF_HAS_NO_GENERATOR)
+                    else:
+                        result.append(ref_block.transactions_generator)
+                elif ref_height in additional_height_dict:
+                    ref_block = additional_height_dict[ref_height]
+                    assert ref_block is not None
+                    if ref_block.transactions_generator is None:
+                        raise ValueError(Err.GENERATOR_REF_HAS_NO_GENERATOR)
                     result.append(ref_block.transactions_generator)
                 else:
-                    if ref_height in additional_height_dict:
-                        ref_block = additional_height_dict[ref_height]
-                        assert ref_block is not None
-                        if ref_block.transactions_generator is None:
-                            raise ValueError(Err.GENERATOR_REF_HAS_NO_GENERATOR)
-                        result.append(ref_block.transactions_generator)
-                    else:
-                        header_hash = self.height_to_hash(ref_height)
-                        if header_hash is None:
-                            raise ValueError(Err.GENERATOR_REF_HAS_NO_GENERATOR)
-                        gen = await self.block_store.get_generator(header_hash)
-                        if gen is None:
-                            raise ValueError(Err.GENERATOR_REF_HAS_NO_GENERATOR)
-                        result.append(gen)
+                    header_hash = self.height_to_hash(ref_height)
+                    if header_hash is None:
+                        raise ValueError(Err.GENERATOR_REF_HAS_NO_GENERATOR)
+                    gen = await self.block_store.get_generator(header_hash)
+                    if gen is None:
+                        raise ValueError(Err.GENERATOR_REF_HAS_NO_GENERATOR)
+                    result.append(gen)
         assert len(result) == len(ref_list)
         return BlockGenerator(block.transactions_generator, result, [])

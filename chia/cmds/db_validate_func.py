@@ -85,12 +85,12 @@ def validate_v2(in_path: Path, *, validate_blocks: bool) -> None:
         height_to_hash = bytearray(peak_height * 32)
 
         with closing(
-            in_db.execute(
-                f"SELECT header_hash, prev_hash, height, in_main_chain"
-                f"{', block, block_record' if validate_blocks else ''} "
-                "FROM full_blocks ORDER BY height DESC"
-            )
-        ) as cursor:
+                    in_db.execute(
+                        f"SELECT header_hash, prev_hash, height, in_main_chain"
+                        f"{', block, block_record' if validate_blocks else ''} "
+                        "FROM full_blocks ORDER BY height DESC"
+                    )
+                ) as cursor:
 
             for row in cursor:
 
@@ -153,12 +153,11 @@ def validate_v2(in_path: Path, *, validate_blocks: bool) -> None:
                             f"but in_main_chain is not set"
                         )
 
-                    if validate_blocks:
-                        if actual_prev_hash != prev:
-                            raise RuntimeError(
-                                f"Block {hh.hex()} has a blob with mismatching "
-                                f"prev-hash: {actual_prev_hash}, expected {prev}"
-                            )
+                    if validate_blocks and actual_prev_hash != prev:
+                        raise RuntimeError(
+                            f"Block {hh.hex()} has a blob with mismatching "
+                            f"prev-hash: {actual_prev_hash}, expected {prev}"
+                        )
 
                     next_hash = prev
 
@@ -166,11 +165,11 @@ def validate_v2(in_path: Path, *, validate_blocks: bool) -> None:
 
                     print(f"\r{height} orphaned blocks: {num_orphans} ", end="")
 
+                elif in_main_chain:
+                    raise RuntimeError(
+                        f"block {hh.hex()} (height: {height}) is orphaned, " "but in_main_chain is set"
+                    )
                 else:
-                    if in_main_chain:
-                        raise RuntimeError(
-                            f"block {hh.hex()} (height: {height}) is orphaned, " "but in_main_chain is set"
-                        )
                     num_orphans += 1
         print("")
 

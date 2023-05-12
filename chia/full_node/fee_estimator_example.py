@@ -50,5 +50,4 @@ class FeeEstimatorExample(FeeEstimatorInterface):
 
     def request_fee_estimates(self, request_times: List[uint64]) -> List[FeeEstimate]:
         estimates = [self.estimate_fee_rate(time_offset_seconds=t) for t in request_times]
-        fee_estimates = [FeeEstimate(None, t, e) for (t, e) in zip(request_times, estimates)]
-        return fee_estimates
+        return [FeeEstimate(None, t, e) for (t, e) in zip(request_times, estimates)]

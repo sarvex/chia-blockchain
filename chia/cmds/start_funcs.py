@@ -21,14 +21,12 @@ def launch_start_daemon(root_path: Path) -> subprocess.Popen:
     if sys.platform == "win32":
         creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
 
-    process = subprocess.Popen(
+    return subprocess.Popen(
         [sys.argv[0], "run_daemon", "--wait-for-unlock"],
         encoding="utf-8",
         stdout=subprocess.PIPE,
         creationflags=creationflags,
     )
-
-    return process
 
 
 async def create_start_daemon_connection(root_path: Path, config: Dict[str, Any]) -> Optional[DaemonProxy]:

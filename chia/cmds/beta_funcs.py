@@ -48,7 +48,7 @@ def prompt_for_beta_path(default_path: Path) -> Path:
         try:
             validate_directory_writable(test_path)
         except InvalidPathError as e:
-            print(str(e))
+            print(e)
             continue
 
         path = test_path
@@ -64,8 +64,7 @@ def prompt_for_metrics_log_interval(default_interval: int) -> int:
     interval: Optional[int] = None
     for _ in range(3):
         user_input = input(
-            "\nEnter a number of seconds as interval in which analytics getting logged, press enter to use the default "
-            f"[{str(default_interval)}]:"
+            f"\nEnter a number of seconds as interval in which analytics getting logged, press enter to use the default [{default_interval}]:"
         )
         test_interval = int(user_input) if user_input else default_interval
 
@@ -122,7 +121,7 @@ def prepare_chia_blockchain_log(path: Path) -> None:
 
 
 def prepare_logs(prepare_path: Path, prepare_callback: Callable[[Path], None]) -> List[Path]:
-    result = [path for path in prepare_path.iterdir()] if prepare_path.exists() else []
+    result = list(prepare_path.iterdir()) if prepare_path.exists() else []
     if len(result):
         print(f"\nPreparing {prepare_path.name!r} logs:")
         for log in result:

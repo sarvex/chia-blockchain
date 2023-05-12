@@ -101,7 +101,7 @@ async def summary(
 ) -> None:
     harvesters_summary = await get_harvesters_summary(farmer_rpc_port)
     blockchain_state = await get_blockchain_state(rpc_port)
-    farmer_running = False if harvesters_summary is None else True  # harvesters uses farmer rpc too
+    farmer_running = harvesters_summary is not None
 
     wallet_not_ready: bool = False
     amounts = None
@@ -109,7 +109,7 @@ async def summary(
         amounts = await get_wallets_stats(wallet_rpc_port)
     except Exception:
         wallet_not_ready = True
-    wallet_not_running: bool = True if amounts is None else False
+    wallet_not_running: bool = amounts is None
 
     print("Farming status: ", end="")
     if blockchain_state is None:
@@ -157,7 +157,7 @@ async def summary(
                     PlotStats.total_plots += plot_count_harvester
                     print(f"   {plot_count_harvester} plots of size: {format_bytes(total_plot_size_harvester)}")
 
-        if len(harvesters_local) > 0:
+        if harvesters_local:
             print(f"Local Harvester{'s' if len(harvesters_local) > 1 else ''}")
             process_harvesters(harvesters_local)
         for harvester_ip, harvester_peers in harvesters_remote.items():
@@ -186,7 +186,7 @@ async def summary(
     if harvesters_summary is not None and PlotStats.total_plots == 0:
         print("Expected time to win: Never (no plots)")
     else:
-        print("Expected time to win: " + format_minutes(minutes))
+        print(f"Expected time to win: {format_minutes(minutes)}")
 
     if amounts is None:
         if wallet_not_running:

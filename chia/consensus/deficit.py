@@ -26,30 +26,31 @@ def calculate_deficit(
     """
     if height == 0:
         return uint8(constants.MIN_BLOCKS_PER_CHALLENGE_BLOCK - 1)
-    else:
-        assert prev_b is not None
-        prev_deficit: uint8 = prev_b.deficit
-        if prev_deficit == constants.MIN_BLOCKS_PER_CHALLENGE_BLOCK:
-            # Prev sb must be an overflow sb. However maybe it's in a different sub-slot
-            if overflow:
-                if num_finished_sub_slots > 0:
-                    # We are an overflow block, but in a new sub-slot, so we can decrease the deficit
-                    return uint8(prev_deficit - 1)
-                # Still overflowed, so we cannot decrease the deficit
-                return uint8(prev_deficit)
-            else:
-                # We are no longer overflow, can decrease
-                return uint8(prev_deficit - 1)
-        elif prev_deficit == 0:
-            if num_finished_sub_slots == 0:
-                return uint8(0)
-            elif num_finished_sub_slots == 1:
-                if overflow:
-                    return uint8(constants.MIN_BLOCKS_PER_CHALLENGE_BLOCK)
-                else:
-                    return uint8(constants.MIN_BLOCKS_PER_CHALLENGE_BLOCK - 1)
-            else:
-                # More than one finished sub slot, we can decrease deficit
-                return uint8(constants.MIN_BLOCKS_PER_CHALLENGE_BLOCK - 1)
-        else:
+    assert prev_b is not None
+    prev_deficit: uint8 = prev_b.deficit
+    if prev_deficit == constants.MIN_BLOCKS_PER_CHALLENGE_BLOCK:
+        if not overflow:
+            # We are no longer overflow, can decrease
             return uint8(prev_deficit - 1)
+        if num_finished_sub_slots > 0:
+            # We are an overflow block, but in a new sub-slot, so we can decrease the deficit
+            return uint8(prev_deficit - 1)
+        # Still overflowed, so we cannot decrease the deficit
+        return uint8(prev_deficit)
+    elif prev_deficit == 0:
+        if (
+            num_finished_sub_slots != 0
+            and num_finished_sub_slots == 1
+            and overflow
+        ):
+            return uint8(constants.MIN_BLOCKS_PER_CHALLENGE_BLOCK)
+        elif (
+            num_finished_sub_slots != 0
+            and num_finished_sub_slots == 1
+            or num_finished_sub_slots != 0
+        ):
+            return uint8(constants.MIN_BLOCKS_PER_CHALLENGE_BLOCK - 1)
+        else:
+            return uint8(0)
+    else:
+        return uint8(prev_deficit - 1)

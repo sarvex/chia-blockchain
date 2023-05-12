@@ -43,8 +43,7 @@ def init_cmd(ctx: click.Context, create_certs: str, fix_ssl_permissions: bool, t
 
     from .init_funcs import init
 
-    set_passphrase = kwargs.get("set_passphrase")
-    if set_passphrase:
+    if set_passphrase := kwargs.get("set_passphrase"):
         initialize_passphrase()
 
     init(

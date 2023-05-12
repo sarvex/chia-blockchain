@@ -195,24 +195,26 @@ class FeeStat:  # TxConfirmStats
         str_failed_average: List[List[str]] = []
         str_m_fee_rate_avg: List[str] = []
         for i in range(0, self.max_periods):
-            str_i_list_conf = []
-            for j in range(0, len(self.confirmed_average[i])):
-                str_i_list_conf.append(float.hex(float(self.confirmed_average[i][j])))
-
+            str_i_list_conf = [
+                float.hex(float(self.confirmed_average[i][j]))
+                for j in range(0, len(self.confirmed_average[i]))
+            ]
             str_confirmed_average.append(str_i_list_conf)
 
-            str_i_list_fail = []
-            for j in range(0, len(self.failed_average[i])):
-                str_i_list_fail.append(float.hex(float(self.failed_average[i][j])))
-
+            str_i_list_fail = [
+                float.hex(float(self.failed_average[i][j]))
+                for j in range(0, len(self.failed_average[i]))
+            ]
             str_failed_average.append(str_i_list_fail)
 
-        for i in range(0, len(self.tx_ct_avg)):
-            str_tx_ct_abg.append(float.hex(float(self.tx_ct_avg[i])))
-
-        for i in range(0, len(self.m_fee_rate_avg)):
-            str_m_fee_rate_avg.append(float.hex(float(self.m_fee_rate_avg[i])))
-
+        str_tx_ct_abg.extend(
+            float.hex(float(self.tx_ct_avg[i]))
+            for i in range(0, len(self.tx_ct_avg))
+        )
+        str_m_fee_rate_avg.extend(
+            float.hex(float(self.m_fee_rate_avg[i]))
+            for i in range(0, len(self.m_fee_rate_avg))
+        )
         return FeeStatBackup(self.type, str_tx_ct_abg, str_confirmed_average, str_failed_average, str_m_fee_rate_avg)
 
     def import_backup(self, backup: FeeStatBackup) -> None:
@@ -270,13 +272,15 @@ class FeeStat:  # TxConfirmStats
             in_mempool=0.0,
             left_mempool=0.0,
         )
-        for bucket in range(max_bucket_index, -1, -1):
+        for bucket in range(best_far_bucket, -1, -1):
             if new_bucket_range:
                 cur_near_bucket = bucket
                 new_bucket_range = False
 
             cur_far_bucket = bucket
-            if period_target - 1 < 0 or period_target - 1 >= len(self.confirmed_average):
+            if period_target < 1 or period_target - 1 >= len(
+                self.confirmed_average
+            ):
                 return EstimateResult(
                     requested_time=uint64(conf_target * SECONDS_PER_BLOCK),
                     pass_bucket=pass_bucket,
@@ -377,13 +381,14 @@ class FeeStat:  # TxConfirmStats
         self.log.debug(f"passed_within_target_perc: {passed_within_target_perc}")
         self.log.debug(f"failed_within_target_perc: {failed_within_target_perc}")
 
-        result = EstimateResult(
-            requested_time=uint64(conf_target * SECONDS_PER_BLOCK - SECONDS_PER_BLOCK),
+        return EstimateResult(
+            requested_time=uint64(
+                conf_target * SECONDS_PER_BLOCK - SECONDS_PER_BLOCK
+            ),
             pass_bucket=pass_bucket,
             fail_bucket=fail_bucket,
             median=median,
         )
-        return result
 
 
 def clamp(n: int, smallest: int, largest: int) -> int:
@@ -391,7 +396,7 @@ def clamp(n: int, smallest: int, largest: int) -> int:
 
 
 def get_bucket_index(buckets: List[float], fee_rate: float) -> int:
-    if len(buckets) < 1:
+    if not buckets:
         raise RuntimeError("get_bucket_index: buckets is invalid ({buckets})")
     # Choose the bucket to the left if we do not have exactly this fee rate
     # Python's list.bisect_left returns the index to insert a new element into a sorted list
@@ -494,7 +499,7 @@ class FeeTracker:
         for item in items:
             self.process_block_tx(block_height, item)
 
-        if self.first_recorded_height == 0 and len(items) > 0:
+        if self.first_recorded_height == 0 and items:
             self.first_recorded_height = block_height
             self.log.info(f"Fee Estimator first recorded height: {self.first_recorded_height}")
 

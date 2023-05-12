@@ -11,7 +11,7 @@ here = pathlib.Path(__file__).parent
 
 
 def main(*args: str) -> int:
-    if len(args) == 0:
+    if not args:
         print("Parameters required")
         return 1
 
